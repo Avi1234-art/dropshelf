@@ -230,7 +230,8 @@ class ShelfWindow:
         toast.setAlphaValue_(0.0)
         toast.setWantsLayer_(True)
         toast.setAttachment_("below")
-        cv.addSubview_(toast)
+        # Place toast behind the bg so the shelf's border draws on top.
+        cv.addSubview_positioned_relativeTo_(toast, -1, bg)
         self._toast_view = toast
 
     def show(self):
@@ -420,11 +421,11 @@ class ShelfWindow:
         return not self._files and self._drop_indicator_view is None
 
     def _center_toast(self):
-        """Position the toast centered horizontally in the gutter, below the bg border."""
+        """Position the toast centered horizontally in the gutter, behind the bg."""
         size = self._toast_view.frame().size
         x = (SHELF_WIDTH - size.width) / 2
-        # 0.1px gap keeps the shelf's rounded outline visible above the toast.
-        y = TOAST_GUTTER_HEIGHT - size.height - 0.1
+        # Overlap 1px into the bg so the shelf border draws on top with no seam.
+        y = TOAST_GUTTER_HEIGHT - size.height + 1
         self._toast_view.setFrame_(NSMakeRect(x, y, size.width, size.height))
 
     def _remove_file_indices(self, indices):

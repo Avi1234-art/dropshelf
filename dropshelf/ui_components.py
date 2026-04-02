@@ -1,6 +1,7 @@
 import math
 import os
 import subprocess
+import threading
 
 import objc
 from AppKit import (
@@ -644,7 +645,8 @@ class ShelfItemView(NSView):
         path = self._file_path
         filename = os.path.basename(path)
 
-        thumb = get_file_thumbnail(path, PREVIEW_SIZE)
+        icon = NSWorkspace.sharedWorkspace().iconForFile_(path)
+        icon.setSize_(NSMakeSize(PREVIEW_SIZE, PREVIEW_SIZE))
         self._thumb_frame = NSMakeRect(
             10,
             (SHELF_ITEM_HEIGHT - PREVIEW_SIZE) // 2,
@@ -652,13 +654,14 @@ class ShelfItemView(NSView):
             PREVIEW_SIZE,
         )
         iv = NSImageView.alloc().initWithFrame_(self._thumb_frame)
-        iv.setImage_(thumb)
+        iv.setImage_(icon)
         iv.setImageScaling_(NSImageScaleProportionallyUpOrDown)
         iv.setWantsLayer_(True)
         iv.layer().setCornerRadius_(6)
         iv.layer().setMasksToBounds_(True)
         self._thumb_view = iv
         self.addSubview_(iv)
+        self._load_thumbnail_async(path)
 
         if len(filename) > 22:
             base, ext = os.path.splitext(filename)
@@ -732,6 +735,21 @@ class ShelfItemView(NSView):
         self.addSubview_(self._remove_btn)
 
         self._drag_handle_frame = NSMakeRect(width - 46, 16, 12, 20)
+
+    def _load_thumbnail_async(self, path):
+        def _worker():
+            thumb = get_file_thumbnail(path, PREVIEW_SIZE)
+            if thumb:
+                self.performSelectorOnMainThread_withObject_waitUntilDone_(
+                    b"_applyThumbnail:", thumb, False
+                )
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    @objc.typedSelector(b"v@:@")
+    def _applyThumbnail_(self, image):
+        if self.superview() is not None and hasattr(self, "_thumb_view"):
+            self._thumb_view.setImage_(image)
 
     def drawRect_(self, rect):
         card_rect = NSMakeRect(

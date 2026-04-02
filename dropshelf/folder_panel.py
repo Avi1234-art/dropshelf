@@ -211,6 +211,49 @@ class FlippedView(NSView):
         return True
 
 
+class DrawerChevronView(NSView):
+    def initWithFrame_(self, frame):
+        self = objc.super(DrawerChevronView, self).initWithFrame_(frame)
+        if self is None:
+            return None
+        self._direction = "left"
+        return self
+
+    def isFlipped(self):
+        return True
+
+    def hitTest_(self, point):
+        return None
+
+    def setDirection_(self, direction):
+        direction = direction if direction in {"left", "right"} else "left"
+        if direction == self._direction:
+            return
+        self._direction = direction
+        self.setNeedsDisplay_(True)
+
+    def drawRect_(self, rect):
+        bounds = self.bounds()
+        cx = bounds.size.width / 2
+        cy = bounds.size.height / 2
+        half_w = 5.0
+        half_h = 7.0
+        path = NSBezierPath.bezierPath()
+        if self._direction == "left":
+            path.moveToPoint_(NSMakePoint(cx + half_w, cy - half_h))
+            path.lineToPoint_(NSMakePoint(cx - half_w, cy))
+            path.lineToPoint_(NSMakePoint(cx + half_w, cy + half_h))
+        else:
+            path.moveToPoint_(NSMakePoint(cx - half_w, cy - half_h))
+            path.lineToPoint_(NSMakePoint(cx + half_w, cy))
+            path.lineToPoint_(NSMakePoint(cx - half_w, cy + half_h))
+        path.setLineWidth_(3.4)
+        path.setLineCapStyle_(1)
+        path.setLineJoinStyle_(1)
+        NSColor.whiteColor().colorWithAlphaComponent_(0.92).set()
+        path.stroke()
+
+
 class AddFolderView(NSView):
     """Dashed border '+' button with 'New Folder' text."""
 
@@ -334,20 +377,26 @@ class FolderPanel:
             NSMakeRect(0, 0, total_w, FOLDER_TAB_HEIGHT)
         )
         self._apply_surface_chrome(bg, CORNER_RADIUS - 4)
+        bg.layer().setBorderColor_(
+            NSColor.whiteColor().colorWithAlphaComponent_(0.24).CGColor()
+        )
         cv.addSubview_(bg)
         self._lip_bg = bg
 
         self._lip_toggle_proxy = ActionProxy.alloc().initWithCallback_(self.toggle_panel)
         btn = NSButton.alloc().initWithFrame_(NSMakeRect(0, 0, total_w, FOLDER_TAB_HEIGHT))
         btn.setBordered_(False)
-        attrs = NSMutableDictionary.alloc().init()
-        attrs[NSForegroundColorAttributeName] = NSColor.secondaryLabelColor()
-        attrs[NSFontAttributeName] = NSFont.systemFontOfSize_weight_(15, 0.3)
+        btn.setTitle_("")
         btn.setTarget_(self._lip_toggle_proxy)
         btn.setAction_(b"invoke:")
         cv.addSubview_(btn)
         self._lip_btn = btn
-        self._lip_btn_attrs = attrs
+
+        chevron = DrawerChevronView.alloc().initWithFrame_(
+            NSMakeRect(0, 0, total_w, FOLDER_TAB_HEIGHT)
+        )
+        cv.addSubview_(chevron)
+        self._lip_chevron = chevron
         self._sync_tab_symbol()
 
     def _build_panel(self):
@@ -395,6 +444,31 @@ class FolderPanel:
         container.addSubview_(hdr)
         self._panel_header = hdr
 
+        add_view = AddFolderView.alloc().initWithFrame_(
+            NSMakeRect(
+                FOLDER_PANEL_PADDING,
+                panel_h - FOLDER_PANEL_PADDING - FOLDER_ADD_BUTTON_HEIGHT,
+                FOLDER_PANEL_WIDTH - FOLDER_PANEL_PADDING * 2,
+                FOLDER_ADD_BUTTON_HEIGHT,
+            )
+        )
+        self._add_click_proxy = ActionProxy.alloc().initWithCallback_(self._pick_folder)
+        add_btn = NSButton.alloc().initWithFrame_(
+            NSMakeRect(
+                0,
+                0,
+                FOLDER_PANEL_WIDTH - FOLDER_PANEL_PADDING * 2,
+                FOLDER_ADD_BUTTON_HEIGHT,
+            )
+        )
+        add_btn.setBordered_(False)
+        add_btn.setTransparent_(True)
+        add_btn.setTarget_(self._add_click_proxy)
+        add_btn.setAction_(b"invoke:")
+        add_view.addSubview_(add_btn)
+        container.addSubview_(add_view)
+        self._add_folder_view = add_view
+
         scroll = NSScrollView.alloc().initWithFrame_(
             NSMakeRect(
                 0,
@@ -427,16 +501,11 @@ class FolderPanel:
         for v in self._folder_views:
             v.removeFromSuperview()
         self._folder_views.clear()
-        if hasattr(self, "_add_folder_view") and self._add_folder_view:
-            self._add_folder_view.removeFromSuperview()
-            self._add_folder_view = None
 
-        folders = self._settings.get("pinned_folders", [])
+        folders = [f for f in self._settings.get("pinned_folders", []) if os.path.isdir(f)]
         item_w = FOLDER_PANEL_WIDTH - FOLDER_PANEL_PADDING * 2
         y = FOLDER_PANEL_PADDING
         for folder_path in folders:
-            if not os.path.isdir(folder_path):
-                continue
             fv = FolderItemView.make_item(
                 folder_path, self.remove_folder, self._move_files_to_folder
             )
@@ -445,42 +514,41 @@ class FolderPanel:
             self._folder_views.append(fv)
             y += FOLDER_ITEM_HEIGHT + FOLDER_PANEL_ITEM_GAP
 
-        add_view = AddFolderView.alloc().initWithFrame_(
-            NSMakeRect(FOLDER_PANEL_PADDING, y, item_w, FOLDER_ADD_BUTTON_HEIGHT)
-        )
-        self._add_click_proxy = ActionProxy.alloc().initWithCallback_(self._pick_folder)
-        add_btn = NSButton.alloc().initWithFrame_(
-            NSMakeRect(0, 0, item_w, FOLDER_ADD_BUTTON_HEIGHT)
-        )
-        add_btn.setBordered_(False)
-        add_btn.setTransparent_(True)
-        add_btn.setTarget_(self._add_click_proxy)
-        add_btn.setAction_(b"invoke:")
-        add_view.addSubview_(add_btn)
-        self._panel_content.addSubview_(add_view)
-        self._add_folder_view = add_view
-        y += FOLDER_ADD_BUTTON_HEIGHT + FOLDER_PANEL_PADDING
-
+        if folders:
+            y += FOLDER_PANEL_PADDING - FOLDER_PANEL_ITEM_GAP
         self._panel_content_height = y
         self._update_panel_height()
 
     def _update_panel_height(self):
-        shelf_h = max(
-            SHELF_HEADER_HEIGHT,
-            self._shelf_window._window.frame().size.height - TOAST_GUTTER_HEIGHT,
+        visible = self._screen_visible_frame()
+        max_panel_h = max(
+            FOLDER_PANEL_MIN_HEIGHT,
+            visible.size.height - 20,
         )
         desired_h = max(
             FOLDER_PANEL_MIN_HEIGHT,
-            SHELF_HEADER_HEIGHT + self._panel_content_height,
+            SHELF_HEADER_HEIGHT
+            + self._panel_content_height
+            + FOLDER_ADD_BUTTON_HEIGHT
+            + FOLDER_PANEL_PADDING,
         )
-        panel_h = min(desired_h, shelf_h)
-        scroll_h = max(0, panel_h - SHELF_HEADER_HEIGHT)
+        panel_h = min(desired_h, max_panel_h)
+        add_y = panel_h - FOLDER_PANEL_PADDING - FOLDER_ADD_BUTTON_HEIGHT
+        scroll_h = max(0, add_y - SHELF_HEADER_HEIGHT)
         document_h = max(self._panel_content_height, scroll_h)
 
         self._panel_window.setContentSize_(NSMakeSize(FOLDER_PANEL_WIDTH, panel_h))
         self._panel_bg.setFrame_(NSMakeRect(0, 0, FOLDER_PANEL_WIDTH, panel_h))
         self._panel_container.setFrame_(NSMakeRect(0, 0, FOLDER_PANEL_WIDTH, panel_h))
         self._panel_header.setFrame_(NSMakeRect(0, 0, FOLDER_PANEL_WIDTH, SHELF_HEADER_HEIGHT))
+        self._add_folder_view.setFrame_(
+            NSMakeRect(
+                FOLDER_PANEL_PADDING,
+                add_y,
+                FOLDER_PANEL_WIDTH - FOLDER_PANEL_PADDING * 2,
+                FOLDER_ADD_BUTTON_HEIGHT,
+            )
+        )
         self._panel_scroll.setFrame_(
             NSMakeRect(0, SHELF_HEADER_HEIGHT, FOLDER_PANEL_WIDTH, scroll_h)
         )
@@ -600,18 +668,22 @@ class FolderPanel:
         return "\u2039" if self._panel_open else "\u203a"
 
     def _sync_tab_symbol(self):
-        symbol = self._tab_symbol(self._drawer_side)
-        self._lip_btn.setAttributedTitle_(
-            NSAttributedString.alloc().initWithString_attributes_(symbol, self._lip_btn_attrs)
-        )
+        direction = "right" if self._tab_symbol(self._drawer_side) == "\u203a" else "left"
+        self._lip_chevron.setDirection_(direction)
 
     def _layout_frames(self, side=None):
         side = side or self._choose_drawer_side()
         shelf_x, shelf_y, shelf_w, shelf_h = self._shelf_geometry()
+        visible = self._screen_visible_frame()
         shelf_right = shelf_x + shelf_w
         panel_h = self._panel_window.frame().size.height
         tab_y = shelf_y + (shelf_h - FOLDER_TAB_HEIGHT) / 2
-        panel_y = shelf_y + max(0, shelf_h - panel_h)
+        panel_y = shelf_y + shelf_h - panel_h
+        panel_y = max(visible.origin.y + 10, panel_y)
+        panel_y = min(
+            panel_y,
+            visible.origin.y + visible.size.height - panel_h - 10,
+        )
 
         if side == "left":
             tab_x = shelf_x - FOLDER_TAB_VISIBLE_WIDTH
@@ -648,22 +720,24 @@ class FolderPanel:
             )
         return layout
 
-    def _ensure_child_window(self, child):
+    def _attach_child_window(self, child):
         main = self._shelf_window._window
-        if child not in (main.childWindows() or []):
-            main.addChildWindow_ordered_(child, 1)
+        if child in (main.childWindows() or []):
+            main.removeChildWindow_(child)
+        main.addChildWindow_ordered_(child, 1)
 
     def show(self):
         layout = self._position_windows()
-        self._ensure_child_window(self._lip_window)
+        self._attach_child_window(self._lip_window)
         self._lip_window.orderFront_(None)
         if self._panel_open:
             self._panel_window.setAlphaValue_(1.0)
             self._panel_window.setFrameOrigin_(
                 NSMakePoint(layout["panel"].origin.x, layout["panel"].origin.y)
             )
-            self._ensure_child_window(self._panel_window)
+            self._attach_child_window(self._panel_window)
             self._panel_window.orderFront_(None)
+            self._attach_child_window(self._lip_window)
             self._lip_window.orderFront_(None)
 
     def hide(self):
@@ -692,9 +766,9 @@ class FolderPanel:
         )
         self._panel_window.setFrame_display_(layout["hidden_panel"], False)
         self._panel_window.setAlphaValue_(0.0)
-        self._ensure_child_window(self._panel_window)
+        self._attach_child_window(self._panel_window)
         self._panel_window.orderFront_(None)
-        self._ensure_child_window(self._lip_window)
+        self._attach_child_window(self._lip_window)
         self._lip_window.orderFront_(None)
 
         NSAnimationContext.beginGrouping()

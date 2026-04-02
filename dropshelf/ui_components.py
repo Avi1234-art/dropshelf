@@ -710,7 +710,7 @@ class ShelfItemView(NSView):
         badge_attrs[NSForegroundColorAttributeName] = badge_color
         size_lbl = NSButton.alloc().initWithFrame_(NSMakeRect(0, 0, badge_w, badge_h))
         size_lbl.setBordered_(False)
-        size_lbl.setEnabled_(False)
+        size_lbl.setRefusesFirstResponder_(True)
         size_lbl.setAttributedTitle_(
             NSAttributedString.alloc().initWithString_attributes_(size_str, badge_attrs)
         )

@@ -137,6 +137,14 @@ class ShelfWindow:
         cv = self._window.contentView()
         cv.setWantsLayer_(True)
 
+        # Toast is added first so it draws behind the bg.
+        toast = ToastBannerView.make_toast()
+        toast.setAlphaValue_(0.0)
+        toast.setWantsLayer_(True)
+        toast.setAttachment_("below")
+        cv.addSubview_(toast)
+        self._toast_view = toast
+
         bg = NSVisualEffectView.alloc().initWithFrame_(
             NSMakeRect(0, TOAST_GUTTER_HEIGHT, SHELF_WIDTH, h)
         )
@@ -147,6 +155,10 @@ class ShelfWindow:
         bg.setWantsLayer_(True)
         bg.layer().setCornerRadius_(CORNER_RADIUS)
         bg.layer().setMasksToBounds_(True)
+        bg.layer().setBorderWidth_(0.5)
+        bg.layer().setBorderColor_(
+            NSColor.colorWithWhite_alpha_(1.0, 0.15).CGColor()
+        )
         cv.addSubview_(bg)
         self._bg = bg
 
@@ -226,13 +238,6 @@ class ShelfWindow:
         self._scroll_view.setDocumentView_(self._drop_view)
         bg.addSubview_(self._scroll_view)
 
-        toast = ToastBannerView.make_toast()
-        toast.setAlphaValue_(0.0)
-        toast.setWantsLayer_(True)
-        toast.setAttachment_("below")
-        # Place toast behind the bg so the shelf's border draws on top.
-        cv.addSubview_positioned_relativeTo_(toast, -1, bg)
-        self._toast_view = toast
 
     def show(self):
         self._show_hide_generation += 1

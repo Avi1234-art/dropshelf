@@ -16,6 +16,8 @@ from AppKit import (
     NSImageView,
     NSMakeRect,
     NSMenu,
+    NSMutableParagraphStyle,
+    NSParagraphStyleAttributeName,
     NSMenuItem,
     NSOffState,
     NSOnState,
@@ -50,6 +52,8 @@ from .constants import (
     TOAST_HIDE_DURATION,
     TOAST_SHOW_DURATION,
     TYPE_SECTIONS,
+    WINDOW_BORDER_ALPHA,
+    WINDOW_BORDER_WIDTH,
 )
 from .file_utils import (
     classify_file_type,
@@ -60,6 +64,7 @@ from .file_utils import (
     human_readable_size,
     normalize_shelf_path,
 )
+from .folder_panel import FolderPanel
 from .settings import save_settings
 from .ui_components import (
     ActionProxy,
@@ -113,6 +118,7 @@ class ShelfWindow:
         self._show_hide_proxy = None
         self._animating_show_hide = False
         self._build_window()
+        self._folder_panel = FolderPanel(self, settings)
 
     def _build_window(self):
         h = 160
@@ -155,9 +161,9 @@ class ShelfWindow:
         bg.setWantsLayer_(True)
         bg.layer().setCornerRadius_(CORNER_RADIUS)
         bg.layer().setMasksToBounds_(True)
-        bg.layer().setBorderWidth_(0.5)
+        bg.layer().setBorderWidth_(WINDOW_BORDER_WIDTH)
         bg.layer().setBorderColor_(
-            NSColor.colorWithWhite_alpha_(1.0, 0.15).CGColor()
+            NSColor.colorWithWhite_alpha_(1.0, WINDOW_BORDER_ALPHA).CGColor()
         )
         cv.addSubview_(bg)
         self._bg = bg
@@ -202,16 +208,23 @@ class ShelfWindow:
         self._sort_btn = sort_btn
 
         # Count label right-aligned, flush against the Clear All button.
+        # Uses NSButton (same as Clear All) so text baselines match exactly.
         clear_x = SHELF_WIDTH - 78
-        self._count_label = NSTextField.labelWithString_("0 items")
-        self._count_label.setFrame_(NSMakeRect(128, 6, clear_x - 128 - 4, 22))
-        self._count_label.setFont_(NSFont.systemFontOfSize_(11))
-        self._count_label.setTextColor_(NSColor.secondaryLabelColor())
-        self._count_label.setDrawsBackground_(False)
-        self._count_label.setBezeled_(False)
-        self._count_label.setEditable_(False)
-        self._count_label.setSelectable_(False)
-        self._count_label.setAlignment_(2)
+        self._count_label = NSButton.alloc().initWithFrame_(
+            NSMakeRect(128, 8, clear_x - 128 - 4, 20)
+        )
+        self._count_label.setBordered_(False)
+        self._count_label.setEnabled_(False)
+        ca_count = NSMutableDictionary.alloc().init()
+        ca_count[NSForegroundColorAttributeName] = NSColor.secondaryLabelColor()
+        ca_count[NSFontAttributeName] = NSFont.systemFontOfSize_(11)
+        pa = NSMutableParagraphStyle.alloc().init()
+        pa.setAlignment_(2)
+        ca_count[NSParagraphStyleAttributeName] = pa
+        self._count_label.setAttributedTitle_(
+            NSAttributedString.alloc().initWithString_attributes_("0 items", ca_count)
+        )
+        self._count_attrs = ca_count
         hdr.addSubview_(self._count_label)
 
         self._clear_proxy = ActionProxy.alloc().initWithCallback_(self.clear_all)
@@ -311,6 +324,8 @@ class ShelfWindow:
             self._bg.setFrame_(bg_frame)
             self._header.setFrame_(header_frame)
             self._scroll_view.setFrame_(scroll_frame)
+        if hasattr(self, "_folder_panel"):
+            self._folder_panel.update_position()
 
     def _scroll_gap_into_view(self, y, height):
         target_y = max(0.0, y - ITEM_GAP)
@@ -319,6 +334,7 @@ class ShelfWindow:
 
     def hide(self):
         self.hide_hover_preview()
+        self._folder_panel.hide()
         self._show_hide_generation += 1
         generation = self._show_hide_generation
         self._last_toggle = time.monotonic()
@@ -359,6 +375,7 @@ class ShelfWindow:
         if generation != self._show_hide_generation:
             return
         self._animating_show_hide = False
+        self._folder_panel.show()
 
     def _finish_hide_animation(self, generation):
         if generation != self._show_hide_generation:
@@ -1485,4 +1502,6 @@ class ShelfWindow:
             text = f"{n} item{'s' if n != 1 else ''}"
             if total_bytes > 0:
                 text += f" · {human_readable_size(total_bytes)}"
-        self._count_label.setStringValue_(text)
+        self._count_label.setAttributedTitle_(
+            NSAttributedString.alloc().initWithString_attributes_(text, self._count_attrs)
+        )

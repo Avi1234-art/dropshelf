@@ -705,15 +705,15 @@ class ShelfItemView(NSView):
         self.addSubview_(badge)
         self._size_badge = badge
 
-        size_lbl = NSTextField.labelWithString_(size_str)
-        size_lbl.setFrame_(NSMakeRect(0, 2, badge_w, badge_h - 2))
-        size_lbl.setFont_(NSFont.systemFontOfSize_(10))
-        size_lbl.setTextColor_(badge_color)
-        size_lbl.setDrawsBackground_(False)
-        size_lbl.setBezeled_(False)
-        size_lbl.setEditable_(False)
-        size_lbl.setSelectable_(False)
-        size_lbl.setAlignment_(1)
+        badge_attrs = NSMutableDictionary.alloc().init()
+        badge_attrs[NSFontAttributeName] = NSFont.systemFontOfSize_(10)
+        badge_attrs[NSForegroundColorAttributeName] = badge_color
+        size_lbl = NSButton.alloc().initWithFrame_(NSMakeRect(0, 0, badge_w, badge_h))
+        size_lbl.setBordered_(False)
+        size_lbl.setEnabled_(False)
+        size_lbl.setAttributedTitle_(
+            NSAttributedString.alloc().initWithString_attributes_(size_str, badge_attrs)
+        )
         badge.addSubview_(size_lbl)
 
         location_str = describe_file_location(path)

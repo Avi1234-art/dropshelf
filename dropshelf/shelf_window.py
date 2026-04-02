@@ -201,8 +201,10 @@ class ShelfWindow:
         hdr.addSubview_(sort_btn)
         self._sort_btn = sort_btn
 
+        # Count label right-aligned, flush against the Clear All button.
+        clear_x = SHELF_WIDTH - 78
         self._count_label = NSTextField.labelWithString_("0 items")
-        self._count_label.setFrame_(NSMakeRect(128, 8, 112, 20))
+        self._count_label.setFrame_(NSMakeRect(128, 8, clear_x - 128 - 4, 20))
         self._count_label.setFont_(NSFont.systemFontOfSize_(11))
         self._count_label.setTextColor_(NSColor.secondaryLabelColor())
         self._count_label.setDrawsBackground_(False)
@@ -213,7 +215,7 @@ class ShelfWindow:
         hdr.addSubview_(self._count_label)
 
         self._clear_proxy = ActionProxy.alloc().initWithCallback_(self.clear_all)
-        clr = NSButton.alloc().initWithFrame_(NSMakeRect(SHELF_WIDTH - 78, 8, 65, 20))
+        clr = NSButton.alloc().initWithFrame_(NSMakeRect(clear_x, 8, 65, 20))
         clr.setBordered_(False)
         ra = NSMutableDictionary.alloc().init()
         ra[NSForegroundColorAttributeName] = NSColor.colorWithRed_green_blue_alpha_(

@@ -689,13 +689,16 @@ class ShelfItemView(NSView):
         size_str = human_readable_size(size_bytes) if size_bytes > 0 else ""
         badge_color, badge_fill = size_badge_style(size_bytes)
         attrs = NSMutableDictionary.alloc().init()
-        attrs[NSFontAttributeName] = NSFont.systemFontOfSize_(11)
+        attrs[NSFontAttributeName] = NSFont.systemFontOfSize_(10)
         size_attr = NSAttributedString.alloc().initWithString_attributes_(size_str, attrs)
         text_size = size_attr.size()
-        badge_w = max(64, math.ceil(text_size.width) + 22)
-        badge = NSView.alloc().initWithFrame_(NSMakeRect(PREVIEW_SIZE + 20, 17, badge_w, 20))
+        badge_h = 17
+        badge_w = math.ceil(text_size.width) + 14
+        badge = NSView.alloc().initWithFrame_(
+            NSMakeRect(PREVIEW_SIZE + 20, 18, badge_w, badge_h)
+        )
         badge.setWantsLayer_(True)
-        badge.layer().setCornerRadius_(10)
+        badge.layer().setCornerRadius_(badge_h / 2)
         badge.layer().setBorderWidth_(1.0)
         badge.layer().setBorderColor_(badge_color.CGColor())
         badge.layer().setBackgroundColor_(badge_fill.CGColor())
@@ -703,21 +706,21 @@ class ShelfItemView(NSView):
         self._size_badge = badge
 
         size_lbl = NSTextField.labelWithString_(size_str)
-        size_lbl.setFrame_(NSMakeRect(9, 3, badge_w - 18, 14))
-        size_lbl.setFont_(NSFont.systemFontOfSize_(11))
+        size_lbl.setFrame_(NSMakeRect(7, 1, badge_w - 14, badge_h - 2))
+        size_lbl.setFont_(NSFont.systemFontOfSize_(10))
         size_lbl.setTextColor_(badge_color)
         size_lbl.setDrawsBackground_(False)
         size_lbl.setBezeled_(False)
         size_lbl.setEditable_(False)
         size_lbl.setSelectable_(False)
-        size_lbl.setAlignment_(2)
+        size_lbl.setAlignment_(1)
         badge.addSubview_(size_lbl)
 
         location_str = describe_file_location(path)
         location_frame = NSMakeRect(
-            PREVIEW_SIZE + 20 + badge_w + 8,
-            20,
-            width - (PREVIEW_SIZE + 20 + badge_w + 78),
+            PREVIEW_SIZE + 20 + badge_w + 6,
+            19,
+            width - (PREVIEW_SIZE + 20 + badge_w + 66),
             14,
         )
         self._location_view = MarqueeLabelView.make_label(

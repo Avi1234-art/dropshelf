@@ -34,12 +34,12 @@ TOAST_BODY_GAP = 6
 TOAST_RETRACT_DISTANCE = 8
 TOAST_WINDOW_TOP_INSET = 0
 TOAST_SHELF_OVERLAP = 0
-TOAST_BODY_HEIGHT = 36
+TOAST_BODY_HEIGHT = 28
 TOAST_MIN_WIDTH = 156
 TOAST_TEXT_PADDING = 18
 TOAST_TEXT_VERTICAL_OFFSET = 1
 # Height of the transparent gutter below the shelf that holds the toast.
-TOAST_GUTTER_HEIGHT = 42
+TOAST_GUTTER_HEIGHT = 34
 
 # Sensitivity presets: (direction_changes, time_window_s, min_segment_px)
 # Tuned so that normal cursor movement between UI elements does NOT

@@ -39,7 +39,7 @@ TOAST_MIN_WIDTH = 156
 TOAST_TEXT_PADDING = 18
 TOAST_TEXT_VERTICAL_OFFSET = 1
 # Height of the transparent gutter below the shelf that holds the toast.
-TOAST_GUTTER_HEIGHT = 34
+TOAST_GUTTER_HEIGHT = 32
 
 # Sensitivity presets: (direction_changes, time_window_s, min_segment_px)
 # Tuned so that normal cursor movement between UI elements does NOT

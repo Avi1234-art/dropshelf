@@ -204,7 +204,7 @@ class ShelfWindow:
         # Count label right-aligned, flush against the Clear All button.
         clear_x = SHELF_WIDTH - 78
         self._count_label = NSTextField.labelWithString_("0 items")
-        self._count_label.setFrame_(NSMakeRect(128, 8, clear_x - 128 - 4, 20))
+        self._count_label.setFrame_(NSMakeRect(128, 6, clear_x - 128 - 4, 22))
         self._count_label.setFont_(NSFont.systemFontOfSize_(11))
         self._count_label.setTextColor_(NSColor.secondaryLabelColor())
         self._count_label.setDrawsBackground_(False)
@@ -862,7 +862,7 @@ class ShelfWindow:
                 view.setFrame_(
                     NSMakeRect(
                         SHELF_PADDING,
-                        y + 12,
+                        y + 6,
                         SHELF_WIDTH - SHELF_PADDING * 2,
                         SHELF_ITEM_HEIGHT,
                     )
@@ -1043,7 +1043,7 @@ class ShelfWindow:
                 cv.animator().setFrameOrigin_(NSMakePoint(orig.origin.x, orig.origin.y))
         NSAnimationContext.endGrouping()
 
-    def _endDropAnimation(self):
+    def _endDropAnimation(self, restore_layout=True):
         if not self._supports_drop_insertion_slot():
             self._drop_highlight = False
             self._drop_view.setNeedsDisplay_(True)
@@ -1061,7 +1061,7 @@ class ShelfWindow:
             NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
                 0.12, self._end_drop_indicator_proxy, b"invoke:", None, False
             )
-        if self._pre_drop_content_frames:
+        if restore_layout and self._pre_drop_content_frames:
             NSAnimationContext.beginGrouping()
             ctx = NSAnimationContext.currentContext()
             ctx.setDuration_(0.15)
@@ -1075,9 +1075,9 @@ class ShelfWindow:
                 if orig:
                     cv.animator().setFrame_(orig)
             NSAnimationContext.endGrouping()
-        if self._pre_drop_window_height is not None:
+        if restore_layout and self._pre_drop_window_height is not None:
             self._apply_window_height(self._pre_drop_window_height)
-        if self._pre_drop_doc_height is not None:
+        if restore_layout and self._pre_drop_doc_height is not None:
             self._drop_view.setFrameSize_(NSMakeSize(SHELF_WIDTH, self._pre_drop_doc_height))
         clip = self._scroll_view.contentView()
         visible_h = clip.bounds().size.height
@@ -1275,7 +1275,7 @@ class ShelfWindow:
                 iv.setFrame_(
                     NSMakeRect(
                         SHELF_PADDING,
-                        y + 12,
+                        y + 6,
                         SHELF_WIDTH - SHELF_PADDING * 2,
                         SHELF_ITEM_HEIGHT,
                     )
@@ -1292,7 +1292,7 @@ class ShelfWindow:
 
         if to_animate:
             NSAnimationContext.beginGrouping()
-            NSAnimationContext.currentContext().setDuration_(0.25)
+            NSAnimationContext.currentContext().setDuration_(0.12)
             for iv, target in to_animate:
                 iv.animator().setFrame_(target)
                 iv.animator().setAlphaValue_(1.0)

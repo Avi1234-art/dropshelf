@@ -693,7 +693,7 @@ class ShelfItemView(NSView):
         size_attr = NSAttributedString.alloc().initWithString_attributes_(size_str, attrs)
         text_size = size_attr.size()
         badge_h = 17
-        badge_w = math.ceil(text_size.width) + 14
+        badge_w = math.ceil(text_size.width) + 20
         badge = NSView.alloc().initWithFrame_(
             NSMakeRect(PREVIEW_SIZE + 20, 18, badge_w, badge_h)
         )
@@ -706,7 +706,7 @@ class ShelfItemView(NSView):
         self._size_badge = badge
 
         size_lbl = NSTextField.labelWithString_(size_str)
-        size_lbl.setFrame_(NSMakeRect(7, 1, badge_w - 14, badge_h - 2))
+        size_lbl.setFrame_(NSMakeRect(0, 2, badge_w, badge_h - 2))
         size_lbl.setFont_(NSFont.systemFontOfSize_(10))
         size_lbl.setTextColor_(badge_color)
         size_lbl.setDrawsBackground_(False)
@@ -1261,7 +1261,7 @@ class DropTargetView(NSView):
         if urls:
             shelf_window = self._shelf_window
             gap_idx = shelf_window._drop_gap_index
-            shelf_window._endDropAnimation()
+            shelf_window._endDropAnimation(restore_layout=False)
             paths = [str(url.path()) for url in urls if url.path()]
             result = shelf_window.add_files(paths, gap_idx)
             if result["added_count"] > 0:

@@ -550,7 +550,7 @@ class MarqueeLabelView(NSView):
     def _animate_marquee_right(self, generation):
         if generation != self._marquee_generation or not self._hovered or not self.has_overflow():
             return
-        self._animate_label_to_x(0, MARQUEE_RETURN_DURATION)
+        self._animate_label_to_x(0, MARQUEE_RETURN_DURATION, ease_out=True)
         self._schedule_callback(
             MARQUEE_RETURN_DURATION + MARQUEE_EDGE_PAUSE,
             lambda current_generation=generation: self._animate_marquee_left(current_generation),
@@ -559,15 +559,29 @@ class MarqueeLabelView(NSView):
     def _overflow_distance(self):
         return max(0, self._text_width - self.bounds().size.width + 12)
 
-    def _animate_label_to_x(self, target_x, duration):
+    def _animate_label_to_x(self, target_x, duration, ease_out=False):
+        if hasattr(self, "_marquee_target_x") and self._marquee_target_x is not None:
+            if abs(self._marquee_target_x - target_x) < 0.5:
+                return
+        self._marquee_target_x = target_x
         if self._label.layer() is not None:
             self._label.layer().removeAllAnimations()
         NSAnimationContext.beginGrouping()
-        NSAnimationContext.currentContext().setDuration_(duration)
+        ctx = NSAnimationContext.currentContext()
+        ctx.setDuration_(duration)
+        try:
+            CAMediaTimingFunction = objc.lookUpClass("CAMediaTimingFunction")
+            if ease_out:
+                ctx.setTimingFunction_(CAMediaTimingFunction.functionWithName_("easeOut"))
+            else:
+                ctx.setTimingFunction_(CAMediaTimingFunction.functionWithName_("linear"))
+        except Exception:
+            pass
         self._label.animator().setFrameOrigin_(NSMakePoint(target_x, self._label.frame().origin.y))
         NSAnimationContext.endGrouping()
 
     def _reset_label_position(self):
+        self._marquee_target_x = None
         if self._label.layer() is not None:
             self._label.layer().removeAllAnimations()
         self._label.setFrameOrigin_(NSMakePoint(0, self._label.frame().origin.y))
@@ -799,6 +813,14 @@ class ShelfItemView(NSView):
             self._thumb_hovered = False
             self._setThumbnailExpanded_(False)
             return
+        # Verify mouse is actually outside bounds to avoid spurious exits
+        # from NSTrackingInVisibleRect during scrolling or sub-area transitions
+        window = self.window()
+        if window is not None:
+            local = self.convertPoint_fromView_(window.mouseLocationOutsideOfEventStream(), None)
+            bounds = self.bounds()
+            if 0 <= local.x <= bounds.size.width and 0 <= local.y <= bounds.size.height:
+                return
         self._hovered = False
         if hasattr(self, "_location_view"):
             self._location_view.setHovered_(False)

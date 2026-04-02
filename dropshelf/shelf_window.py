@@ -1,6 +1,7 @@
 import os
 import time
 
+import objc
 from AppKit import (
     NSAnimationContext,
     NSAttributedString,
@@ -115,6 +116,10 @@ class ShelfWindow:
         self._reveal_proxy = None
         self._toast_attachment = None
         self._toast_window = None
+        self._show_hide_generation = 0
+        self._show_hide_proxy = None
+        self._animating_show_hide = False
+        self._resize_toast_proxy = None
         self._build_window()
 
     def _build_window(self):
@@ -245,10 +250,7 @@ class ShelfWindow:
         self._toast_window.setCollectionBehavior_(NSWindowCollectionBehaviorCanJoinAllSpaces)
         self._toast_window.setAlphaValue_(0.0)
         self._toast_window.contentView().setWantsLayer_(True)
-        # NSWindowBelow keeps the toast behind the shelf during the brief
-        # overlap at the start/end of the slide animation, preventing the
-        # visual "clipping" artifact.
-        self._window.addChildWindow_ordered_(self._toast_window, NSWindowBelow)
+        self._window.addChildWindow_ordered_(self._toast_window, NSWindowAbove)
 
         toast = ToastBannerView.make_toast()
         toast.setAlphaValue_(1.0)
@@ -257,34 +259,83 @@ class ShelfWindow:
         self._position_toast_view()
 
     def show(self):
-        x, y = compute_position(self._settings["position"], self._window.frame().size.height)
-        self._window.setFrameOrigin_(NSMakePoint(x, y))
-        self._position_toast_view()
+        self._show_hide_generation += 1
+        generation = self._show_hide_generation
+        h = self._window.frame().size.height
+        x, y = compute_position(self._settings["position"], h)
+        self._window.setAlphaValue_(0.0)
+        self._window.setFrameOrigin_(NSMakePoint(x, y - 12))
+        self._detach_toast_for_animation()
         self._window.orderFront_(None)
         self._last_toggle = time.monotonic()
+        self._animating_show_hide = True
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.currentContext().setDuration_(0.2)
+        self._window.animator().setAlphaValue_(1.0)
+        self._window.animator().setFrameOrigin_(NSMakePoint(x, y))
+        NSAnimationContext.endGrouping()
+        self._show_hide_proxy = ActionProxy.alloc().initWithCallback_(
+            lambda g=generation: self._finish_show_animation(g)
+        )
+        NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+            0.22, self._show_hide_proxy, b"invoke:", None, False
+        )
 
     def show_in_place(self):
-        self._position_toast_view()
+        self._show_hide_generation += 1
+        generation = self._show_hide_generation
+        frame = self._window.frame()
+        target_x, target_y = frame.origin.x, frame.origin.y
+        self._window.setAlphaValue_(0.0)
+        self._window.setFrameOrigin_(NSMakePoint(target_x, target_y - 12))
+        self._detach_toast_for_animation()
         self._window.orderFront_(None)
         self._last_toggle = time.monotonic()
+        self._animating_show_hide = True
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.currentContext().setDuration_(0.2)
+        self._window.animator().setAlphaValue_(1.0)
+        self._window.animator().setFrameOrigin_(NSMakePoint(target_x, target_y))
+        NSAnimationContext.endGrouping()
+        self._show_hide_proxy = ActionProxy.alloc().initWithCallback_(
+            lambda g=generation: self._finish_show_animation(g)
+        )
+        NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+            0.22, self._show_hide_proxy, b"invoke:", None, False
+        )
 
     def _max_list_height(self):
         visible_row_capacity = SHELF_MAX_VISIBLE_ITEMS * (SHELF_ITEM_HEIGHT + ITEM_GAP)
         return visible_row_capacity + SHELF_PADDING * 2 + SECTION_HEADER_HEIGHT
 
-    def _apply_window_height(self, total_height):
+    def _apply_window_height(self, total_height, animated=False):
         frame = self._window.frame()
         old_top = frame.origin.y + frame.size.height
-        frame.size.height = total_height
-        frame.origin.y = old_top - total_height
-        self._window.setFrame_display_(frame, True)
+        new_frame = NSMakeRect(frame.origin.x, old_top - total_height, SHELF_WIDTH, total_height)
+        header_frame = NSMakeRect(0, total_height - SHELF_HEADER_HEIGHT, SHELF_WIDTH, SHELF_HEADER_HEIGHT)
+        scroll_frame = NSMakeRect(0, 0, SHELF_WIDTH, total_height - SHELF_HEADER_HEIGHT)
+        bg_frame = NSMakeRect(0, 0, SHELF_WIDTH, total_height)
 
-        self._bg.setFrame_(self._window.contentView().bounds())
-        self._header.setFrame_(
-            NSMakeRect(0, total_height - SHELF_HEADER_HEIGHT, SHELF_WIDTH, SHELF_HEADER_HEIGHT)
-        )
-        self._scroll_view.setFrame_(NSMakeRect(0, 0, SHELF_WIDTH, total_height - SHELF_HEADER_HEIGHT))
-        self._position_toast_view()
+        if animated and not self._animating_show_hide:
+            NSAnimationContext.beginGrouping()
+            NSAnimationContext.currentContext().setDuration_(0.15)
+            self._window.animator().setFrame_display_(new_frame, True)
+            self._bg.animator().setFrame_(bg_frame)
+            self._header.animator().setFrame_(header_frame)
+            self._scroll_view.animator().setFrame_(scroll_frame)
+            NSAnimationContext.endGrouping()
+            self._resize_toast_proxy = ActionProxy.alloc().initWithCallback_(
+                self._position_toast_view
+            )
+            NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                0.17, self._resize_toast_proxy, b"invoke:", None, False
+            )
+        else:
+            self._window.setFrame_display_(new_frame, True)
+            self._bg.setFrame_(self._window.contentView().bounds())
+            self._header.setFrame_(header_frame)
+            self._scroll_view.setFrame_(scroll_frame)
+            self._position_toast_view()
 
     def _scroll_gap_into_view(self, y, height):
         target_y = max(0.0, y - ITEM_GAP)
@@ -293,10 +344,25 @@ class ShelfWindow:
 
     def hide(self):
         self.hide_hover_preview()
-        if self._toast_window is not None:
-            self._toast_window.orderOut_(None)
-        self._window.orderOut_(None)
+        self._show_hide_generation += 1
+        generation = self._show_hide_generation
+        self._detach_toast_for_animation()
         self._last_toggle = time.monotonic()
+        self._animating_show_hide = True
+        frame = self._window.frame()
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.currentContext().setDuration_(0.2)
+        self._window.animator().setAlphaValue_(0.0)
+        self._window.animator().setFrameOrigin_(
+            NSMakePoint(frame.origin.x, frame.origin.y - 12)
+        )
+        NSAnimationContext.endGrouping()
+        self._show_hide_proxy = ActionProxy.alloc().initWithCallback_(
+            lambda g=generation: self._finish_hide_animation(g)
+        )
+        NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+            0.22, self._show_hide_proxy, b"invoke:", None, False
+        )
         if self._shake_detector:
             self._shake_detector._cooldown_(3.0)
 
@@ -314,6 +380,33 @@ class ShelfWindow:
 
     def recently_toggled(self):
         return time.monotonic() - self._last_toggle < 1.0
+
+    def _detach_toast_for_animation(self):
+        if self._toast_window is not None:
+            if self._toast_window.parentWindow() is self._window:
+                self._window.removeChildWindow_(self._toast_window)
+            self._toast_window.orderOut_(None)
+
+    def _reattach_toast(self):
+        if self._toast_window is not None:
+            if self._toast_window.parentWindow() is not self._window:
+                self._window.addChildWindow_ordered_(self._toast_window, NSWindowAbove)
+            self._position_toast_view()
+
+    def _finish_show_animation(self, generation):
+        if generation != self._show_hide_generation:
+            return
+        self._animating_show_hide = False
+        self._reattach_toast()
+
+    def _finish_hide_animation(self, generation):
+        if generation != self._show_hide_generation:
+            return
+        self._animating_show_hide = False
+        self._window.orderOut_(None)
+        frame = self._window.frame()
+        self._window.setFrameOrigin_(NSMakePoint(frame.origin.x, frame.origin.y + 12))
+        self._window.setAlphaValue_(1.0)
 
     def add_file(self, path):
         self.add_files([path])
@@ -412,10 +505,7 @@ class ShelfWindow:
             return
         if self._toast_window.parentWindow() is self._window:
             self._window.removeChildWindow_(self._toast_window)
-        # NSWindowBelow keeps the toast behind the shelf during the brief
-        # overlap at the start/end of the slide animation, preventing the
-        # visual "clipping" artifact.
-        self._window.addChildWindow_ordered_(self._toast_window, NSWindowBelow)
+        self._window.addChildWindow_ordered_(self._toast_window, NSWindowAbove)
         self._toast_attachment = attachment
 
     def _toast_origin(self, visible):
@@ -433,10 +523,16 @@ class ShelfWindow:
 
         if self._toast_attachment == "above":
             visible_y = shelf_frame.origin.y + shelf_frame.size.height + TOAST_BODY_GAP
-            hidden_y = visible_y - TOAST_RETRACT_DISTANCE
+            hidden_y = max(
+                visible_y - TOAST_RETRACT_DISTANCE,
+                shelf_frame.origin.y + shelf_frame.size.height,
+            )
         else:
             visible_y = shelf_frame.origin.y - size.height - TOAST_BODY_GAP
-            hidden_y = visible_y + TOAST_RETRACT_DISTANCE
+            hidden_y = min(
+                visible_y + TOAST_RETRACT_DISTANCE,
+                shelf_frame.origin.y - size.height,
+            )
         return NSMakePoint(x, visible_y if visible else hidden_y)
 
     def _remove_file_indices(self, indices):
@@ -602,25 +698,18 @@ class ShelfWindow:
 
         animated_views.sort(key=lambda view: (-view.frame().origin.y, view.frame().origin.x))
         self._clear_animation_proxies = []
+        last_order = len(animated_views) - 1
         for order, view in enumerate(animated_views):
+            is_last = order == last_order
             proxy = ActionProxy.alloc().initWithCallback_(
-                lambda current=view: self._animate_clear_all_view(current)
+                lambda current=view, last=is_last: self._animate_clear_all_view(current, last)
             )
             self._clear_animation_proxies.append(proxy)
             NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
                 order * CLEAR_ALL_STAGGER, proxy, b"invoke:", None, False
             )
 
-        completion_proxy = ActionProxy.alloc().initWithCallback_(self._finish_clear_all_animation)
-        self._clear_animation_proxies.append(completion_proxy)
-        total_delay = max(
-            0.0, (len(animated_views) - 1) * CLEAR_ALL_STAGGER + CLEAR_ALL_DURATION + 0.04
-        )
-        NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-            total_delay, completion_proxy, b"invoke:", None, False
-        )
-
-    def _animate_clear_all_view(self, view):
+    def _animate_clear_all_view(self, view, is_last=False):
         if not self._clear_in_progress or view.superview() is None:
             return
 
@@ -628,9 +717,10 @@ class ShelfWindow:
         target_frame = self._clear_target_frame(view.frame(), is_header)
         view.setWantsLayer_(True)
         NSAnimationContext.beginGrouping()
-        NSAnimationContext.currentContext().setDuration_(
-            CLEAR_ALL_DURATION * (0.9 if is_header else 1.0)
-        )
+        ctx = NSAnimationContext.currentContext()
+        ctx.setDuration_(CLEAR_ALL_DURATION * (0.9 if is_header else 1.0))
+        if is_last:
+            ctx.setCompletionHandler_(self._finish_clear_all_animation)
         view.animator().setFrame_(target_frame)
         view.animator().setAlphaValue_(0.0)
         NSAnimationContext.endGrouping()
@@ -1031,7 +1121,14 @@ class ShelfWindow:
             context_h += ITEM_GAP + SHELF_ITEM_HEIGHT
         self._scroll_gap_into_view(placeholder_y, context_h)
         NSAnimationContext.beginGrouping()
-        NSAnimationContext.currentContext().setDuration_(0.2)
+        ctx = NSAnimationContext.currentContext()
+        ctx.setDuration_(0.2)
+        ctx.setAllowsImplicitAnimation_(True)
+        try:
+            CAMediaTimingFunction = objc.lookUpClass("CAMediaTimingFunction")
+            ctx.setTimingFunction_(CAMediaTimingFunction.functionWithName_("easeInEaseOut"))
+        except Exception:
+            pass
         self._drop_indicator_view.animator().setFrame_(
             NSMakeRect(
                 SHELF_PADDING,
@@ -1057,13 +1154,32 @@ class ShelfWindow:
             self._drop_view.setNeedsDisplay_(True)
             return
         if self._drop_indicator_view is not None:
-            self._drop_indicator_view.removeFromSuperview()
+            indicator = self._drop_indicator_view
             self._drop_indicator_view = None
+            NSAnimationContext.beginGrouping()
+            NSAnimationContext.currentContext().setDuration_(0.1)
+            indicator.animator().setAlphaValue_(0.0)
+            NSAnimationContext.endGrouping()
+            self._end_drop_indicator_proxy = ActionProxy.alloc().initWithCallback_(
+                lambda v=indicator: v.removeFromSuperview()
+            )
+            NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                0.12, self._end_drop_indicator_proxy, b"invoke:", None, False
+            )
         if self._pre_drop_content_frames:
+            NSAnimationContext.beginGrouping()
+            ctx = NSAnimationContext.currentContext()
+            ctx.setDuration_(0.15)
+            try:
+                CAMediaTimingFunction = objc.lookUpClass("CAMediaTimingFunction")
+                ctx.setTimingFunction_(CAMediaTimingFunction.functionWithName_("easeInEaseOut"))
+            except Exception:
+                pass
             for cv in self._content_views:
                 orig = self._pre_drop_content_frames.get(id(cv))
                 if orig:
-                    cv.setFrame_(orig)
+                    cv.animator().setFrame_(orig)
+            NSAnimationContext.endGrouping()
         if self._pre_drop_window_height is not None:
             self._apply_window_height(self._pre_drop_window_height)
         if self._pre_drop_doc_height is not None:
@@ -1143,17 +1259,53 @@ class ShelfWindow:
         card.addSubview_(image_view)
 
         content.addSubview_(card)
+        preview_window.setAlphaValue_(0.0)
         preview_window.orderFront_(None)
         self._hover_preview_window = preview_window
         self._hover_preview_owner = item_view
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.currentContext().setDuration_(0.18)
+        preview_window.animator().setAlphaValue_(1.0)
+        NSAnimationContext.endGrouping()
+        try:
+            CASpringAnimation = objc.lookUpClass("CASpringAnimation")
+            spring = CASpringAnimation.animationWithKeyPath_("transform.scale")
+            spring.setFromValue_(0.95)
+            spring.setToValue_(1.0)
+            spring.setDamping_(12)
+            spring.setInitialVelocity_(0)
+            spring.setDuration_(0.18)
+            content.layer().addAnimation_forKey_(spring, "previewReveal")
+        except Exception:
+            try:
+                CABasicAnimation = objc.lookUpClass("CABasicAnimation")
+                anim = CABasicAnimation.animationWithKeyPath_("transform.scale")
+                anim.setFromValue_(0.95)
+                anim.setToValue_(1.0)
+                anim.setDuration_(0.18)
+                content.layer().addAnimation_forKey_(anim, "previewReveal")
+            except Exception:
+                pass
 
     def hide_hover_preview(self, owner=None):
         if owner is not None and self._hover_preview_owner is not owner:
             return
         if self._hover_preview_window is not None:
-            self._hover_preview_window.orderOut_(None)
+            window = self._hover_preview_window
             self._hover_preview_window = None
-        self._hover_preview_owner = None
+            self._hover_preview_owner = None
+            NSAnimationContext.beginGrouping()
+            NSAnimationContext.currentContext().setDuration_(0.1)
+            window.animator().setAlphaValue_(0.0)
+            NSAnimationContext.endGrouping()
+            self._hide_preview_proxy = ActionProxy.alloc().initWithCallback_(
+                lambda w=window: w.orderOut_(None)
+            )
+            NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                0.12, self._hide_preview_proxy, b"invoke:", None, False
+            )
+        else:
+            self._hover_preview_owner = None
 
     def _refresh(self):
         self._window.disableScreenUpdatesUntilFlush()
@@ -1178,7 +1330,7 @@ class ShelfWindow:
                 self._content_height_for_rows(rows), self._max_list_height()
             )
 
-        self._apply_window_height(ch)
+        self._apply_window_height(ch, animated=True)
 
         dh = ch - SHELF_HEADER_HEIGHT
 

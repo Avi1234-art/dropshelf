@@ -423,8 +423,8 @@ class ShelfWindow:
         """Position the toast centered horizontally in the gutter, below the bg border."""
         size = self._toast_view.frame().size
         x = (SHELF_WIDTH - size.width) / 2
-        # 0.5px gap keeps the shelf's rounded outline visible above the toast.
-        y = TOAST_GUTTER_HEIGHT - size.height - 0.5
+        # 0.1px gap keeps the shelf's rounded outline visible above the toast.
+        y = TOAST_GUTTER_HEIGHT - size.height - 0.1
         self._toast_view.setFrame_(NSMakeRect(x, y, size.width, size.height))
 
     def _remove_file_indices(self, indices):

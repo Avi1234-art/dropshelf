@@ -25,8 +25,6 @@ from AppKit import (
     NSView,
     NSVisualEffectView,
     NSWindow,
-    NSWindowAbove,
-    NSWindowBelow,
     NSWindowCollectionBehaviorCanJoinAllSpaces,
     NSWindowStyleMaskBorderless,
 )
@@ -46,14 +44,11 @@ from .constants import (
     SHELF_MAX_VISIBLE_ITEMS,
     SHELF_PADDING,
     SHELF_WIDTH,
-    TOAST_BODY_GAP,
     TOAST_BODY_HEIGHT,
     TOAST_DURATION,
+    TOAST_GUTTER_HEIGHT,
     TOAST_HIDE_DURATION,
-    TOAST_RETRACT_DISTANCE,
-    TOAST_SHELF_OVERLAP,
     TOAST_SHOW_DURATION,
-    TOAST_WINDOW_TOP_INSET,
     TYPE_SECTIONS,
 )
 from .file_utils import (
@@ -114,20 +109,18 @@ class ShelfWindow:
         self._toast_generation = 0
         self._toast_hide_proxy = None
         self._reveal_proxy = None
-        self._toast_attachment = None
-        self._toast_window = None
         self._show_hide_generation = 0
         self._show_hide_proxy = None
         self._animating_show_hide = False
-        self._resize_toast_proxy = None
         self._build_window()
 
     def _build_window(self):
         h = 160
-        x, y = compute_position(self._settings["position"], h)
+        window_h = h + TOAST_GUTTER_HEIGHT
+        x, y = compute_position(self._settings["position"], window_h)
 
         self._window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
-            NSMakeRect(x, y, SHELF_WIDTH, h),
+            NSMakeRect(x, y, SHELF_WIDTH, window_h),
             NSWindowStyleMaskBorderless,
             NSBackingStoreBuffered,
             False,
@@ -144,8 +137,10 @@ class ShelfWindow:
         cv = self._window.contentView()
         cv.setWantsLayer_(True)
 
-        bg = NSVisualEffectView.alloc().initWithFrame_(cv.bounds())
-        bg.setAutoresizingMask_(18)
+        bg = NSVisualEffectView.alloc().initWithFrame_(
+            NSMakeRect(0, TOAST_GUTTER_HEIGHT, SHELF_WIDTH, h)
+        )
+        bg.setAutoresizingMask_(0)
         bg.setBlendingMode_(1)
         bg.setMaterial_(6)
         bg.setState_(1)
@@ -231,32 +226,12 @@ class ShelfWindow:
         self._scroll_view.setDocumentView_(self._drop_view)
         bg.addSubview_(self._scroll_view)
 
-        self._toast_window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
-            NSMakeRect(
-                x,
-                y - (TOAST_WINDOW_TOP_INSET + TOAST_BODY_HEIGHT),
-                220,
-                TOAST_WINDOW_TOP_INSET + TOAST_BODY_HEIGHT,
-            ),
-            NSWindowStyleMaskBorderless,
-            NSBackingStoreBuffered,
-            False,
-        )
-        self._toast_window.setLevel_(NSFloatingWindowLevel)
-        self._toast_window.setOpaque_(False)
-        self._toast_window.setBackgroundColor_(NSColor.clearColor())
-        self._toast_window.setHasShadow_(False)
-        self._toast_window.setIgnoresMouseEvents_(True)
-        self._toast_window.setCollectionBehavior_(NSWindowCollectionBehaviorCanJoinAllSpaces)
-        self._toast_window.setAlphaValue_(0.0)
-        self._toast_window.contentView().setWantsLayer_(True)
-        self._window.addChildWindow_ordered_(self._toast_window, NSWindowAbove)
-
         toast = ToastBannerView.make_toast()
-        toast.setAlphaValue_(1.0)
-        self._toast_window.contentView().addSubview_(toast)
+        toast.setAlphaValue_(0.0)
+        toast.setWantsLayer_(True)
+        toast.setAttachment_("below")
+        cv.addSubview_(toast)
         self._toast_view = toast
-        self._position_toast_view()
 
     def show(self):
         self._show_hide_generation += 1
@@ -265,7 +240,6 @@ class ShelfWindow:
         x, y = compute_position(self._settings["position"], h)
         self._window.setAlphaValue_(0.0)
         self._window.setFrameOrigin_(NSMakePoint(x, y - 12))
-        self._detach_toast_for_animation()
         self._window.orderFront_(None)
         self._last_toggle = time.monotonic()
         self._animating_show_hide = True
@@ -288,7 +262,6 @@ class ShelfWindow:
         target_x, target_y = frame.origin.x, frame.origin.y
         self._window.setAlphaValue_(0.0)
         self._window.setFrameOrigin_(NSMakePoint(target_x, target_y - 12))
-        self._detach_toast_for_animation()
         self._window.orderFront_(None)
         self._last_toggle = time.monotonic()
         self._animating_show_hide = True
@@ -311,10 +284,11 @@ class ShelfWindow:
     def _apply_window_height(self, total_height, animated=False):
         frame = self._window.frame()
         old_top = frame.origin.y + frame.size.height
-        new_frame = NSMakeRect(frame.origin.x, old_top - total_height, SHELF_WIDTH, total_height)
+        window_height = total_height + TOAST_GUTTER_HEIGHT
+        new_frame = NSMakeRect(frame.origin.x, old_top - window_height, SHELF_WIDTH, window_height)
+        bg_frame = NSMakeRect(0, TOAST_GUTTER_HEIGHT, SHELF_WIDTH, total_height)
         header_frame = NSMakeRect(0, total_height - SHELF_HEADER_HEIGHT, SHELF_WIDTH, SHELF_HEADER_HEIGHT)
         scroll_frame = NSMakeRect(0, 0, SHELF_WIDTH, total_height - SHELF_HEADER_HEIGHT)
-        bg_frame = NSMakeRect(0, 0, SHELF_WIDTH, total_height)
 
         if animated and not self._animating_show_hide:
             NSAnimationContext.beginGrouping()
@@ -324,18 +298,11 @@ class ShelfWindow:
             self._header.animator().setFrame_(header_frame)
             self._scroll_view.animator().setFrame_(scroll_frame)
             NSAnimationContext.endGrouping()
-            self._resize_toast_proxy = ActionProxy.alloc().initWithCallback_(
-                self._position_toast_view
-            )
-            NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-                0.17, self._resize_toast_proxy, b"invoke:", None, False
-            )
         else:
             self._window.setFrame_display_(new_frame, True)
-            self._bg.setFrame_(self._window.contentView().bounds())
+            self._bg.setFrame_(bg_frame)
             self._header.setFrame_(header_frame)
             self._scroll_view.setFrame_(scroll_frame)
-            self._position_toast_view()
 
     def _scroll_gap_into_view(self, y, height):
         target_y = max(0.0, y - ITEM_GAP)
@@ -346,7 +313,6 @@ class ShelfWindow:
         self.hide_hover_preview()
         self._show_hide_generation += 1
         generation = self._show_hide_generation
-        self._detach_toast_for_animation()
         self._last_toggle = time.monotonic()
         self._animating_show_hide = True
         frame = self._window.frame()
@@ -381,23 +347,10 @@ class ShelfWindow:
     def recently_toggled(self):
         return time.monotonic() - self._last_toggle < 1.0
 
-    def _detach_toast_for_animation(self):
-        if self._toast_window is not None:
-            if self._toast_window.parentWindow() is self._window:
-                self._window.removeChildWindow_(self._toast_window)
-            self._toast_window.orderOut_(None)
-
-    def _reattach_toast(self):
-        if self._toast_window is not None:
-            if self._toast_window.parentWindow() is not self._window:
-                self._window.addChildWindow_ordered_(self._toast_window, NSWindowAbove)
-            self._position_toast_view()
-
     def _finish_show_animation(self, generation):
         if generation != self._show_hide_generation:
             return
         self._animating_show_hide = False
-        self._reattach_toast()
 
     def _finish_hide_animation(self, generation):
         if generation != self._show_hide_generation:
@@ -466,74 +419,12 @@ class ShelfWindow:
     def should_draw_empty_hint(self):
         return not self._files and self._drop_indicator_view is None
 
-    def _position_toast_view(self):
-        if not hasattr(self, "_toast_view") or self._toast_window is None:
-            return
+    def _center_toast(self):
+        """Position the toast centered horizontally in the gutter, flush with the bg."""
         size = self._toast_view.frame().size
-        self._toast_view.setFrame_(NSMakeRect(0, 0, size.width, size.height))
-        self._toast_window.setContentSize_(size)
-        self._set_toast_attachment(self._preferred_toast_attachment(size))
-        self._toast_view.setAttachment_(self._toast_attachment)
-        visible = self._toast_window.alphaValue() > 0.01
-        self._toast_window.setFrameOrigin_(self._toast_origin(visible))
-
-    def _preferred_toast_attachment(self, size):
-        screen = self._window.screen() or NSScreen.mainScreen()
-        if screen is None and NSScreen.screens():
-            screen = NSScreen.screens()[0]
-        if screen is None:
-            return "below"
-
-        visible_frame = screen.visibleFrame()
-        shelf_frame = self._window.frame()
-        toast_height = size.height
-        required_space = toast_height + TOAST_BODY_GAP + 10.0
-        space_below = shelf_frame.origin.y - visible_frame.origin.y
-        space_above = (
-            visible_frame.origin.y + visible_frame.size.height
-            - (shelf_frame.origin.y + shelf_frame.size.height)
-        )
-
-        if space_below >= required_space:
-            return "below"
-        if space_above >= required_space:
-            return "above"
-        return "below" if space_below >= space_above else "above"
-
-    def _set_toast_attachment(self, attachment):
-        if attachment == self._toast_attachment:
-            return
-        if self._toast_window.parentWindow() is self._window:
-            self._window.removeChildWindow_(self._toast_window)
-        self._window.addChildWindow_ordered_(self._toast_window, NSWindowAbove)
-        self._toast_attachment = attachment
-
-    def _toast_origin(self, visible):
-        size = self._toast_view.frame().size
-        shelf_frame = self._window.frame()
-        x = shelf_frame.origin.x + (shelf_frame.size.width - size.width) / 2
-        screen = self._window.screen() or NSScreen.mainScreen()
-        if screen is None and NSScreen.screens():
-            screen = NSScreen.screens()[0]
-        if screen is not None:
-            visible_frame = screen.visibleFrame()
-            min_x = visible_frame.origin.x + 10
-            max_x = visible_frame.origin.x + visible_frame.size.width - size.width - 10
-            x = max(min_x, min(x, max_x))
-
-        if self._toast_attachment == "above":
-            visible_y = shelf_frame.origin.y + shelf_frame.size.height + TOAST_BODY_GAP
-            hidden_y = max(
-                visible_y - TOAST_RETRACT_DISTANCE,
-                shelf_frame.origin.y + shelf_frame.size.height,
-            )
-        else:
-            visible_y = shelf_frame.origin.y - size.height - TOAST_BODY_GAP
-            hidden_y = min(
-                visible_y + TOAST_RETRACT_DISTANCE,
-                shelf_frame.origin.y - size.height,
-            )
-        return NSMakePoint(x, visible_y if visible else hidden_y)
+        x = (SHELF_WIDTH - size.width) / 2
+        y = TOAST_GUTTER_HEIGHT - size.height
+        self._toast_view.setFrame_(NSMakeRect(x, y, size.width, size.height))
 
     def _remove_file_indices(self, indices):
         removal = sorted({i for i in indices if 0 <= i < len(self._files)})
@@ -568,15 +459,11 @@ class ShelfWindow:
         self._toast_generation += 1
         generation = self._toast_generation
         self._toast_view.setMessage_style_(message, style)
-        self._toast_view.setAlphaValue_(1.0)
-        self._position_toast_view()
-        self._toast_window.setFrameOrigin_(self._toast_origin(False))
-        self._toast_window.setAlphaValue_(0.0)
-        self._toast_window.orderFront_(None)
+        self._center_toast()
+        self._toast_view.setAlphaValue_(0.0)
         NSAnimationContext.beginGrouping()
         NSAnimationContext.currentContext().setDuration_(TOAST_SHOW_DURATION)
-        self._toast_window.animator().setFrameOrigin_(self._toast_origin(True))
-        self._toast_window.animator().setAlphaValue_(1.0)
+        self._toast_view.animator().setAlphaValue_(1.0)
         NSAnimationContext.endGrouping()
         self._toast_view.play_pop_animation()
         self._toast_hide_proxy = ActionProxy.alloc().initWithCallback_(
@@ -591,8 +478,7 @@ class ShelfWindow:
             return
         NSAnimationContext.beginGrouping()
         NSAnimationContext.currentContext().setDuration_(TOAST_HIDE_DURATION)
-        self._toast_window.animator().setFrameOrigin_(self._toast_origin(False))
-        self._toast_window.animator().setAlphaValue_(0.0)
+        self._toast_view.animator().setAlphaValue_(0.0)
         NSAnimationContext.endGrouping()
 
     def _focus_existing_path(self, path):
@@ -1079,7 +965,7 @@ class ShelfWindow:
         for cv in self._content_views:
             self._pre_drop_content_frames[id(cv)] = cv.frame()
         self._pre_drop_doc_height = self._drop_view.frame().size.height
-        self._pre_drop_window_height = self._window.frame().size.height
+        self._pre_drop_window_height = self._window.frame().size.height - TOAST_GUTTER_HEIGHT
         self._pre_drop_scroll_origin_y = self._scroll_view.contentView().bounds().origin.y
         self._drop_indicator_view = DropPlaceholderView.make_placeholder()
         self._drop_indicator_view.setWantsLayer_(True)
@@ -1325,12 +1211,17 @@ class ShelfWindow:
         rows = self._build_render_rows()
         if n == 0:
             ch = 160
+            # Instant resize when going empty — the clear-all animation
+            # already provided the transition, and an animated resize
+            # here would leave stale scroll/geometry state.
+            self._apply_window_height(ch, animated=False)
+            self._scroll_view.contentView().scrollToPoint_(NSMakePoint(0, 0))
+            self._scroll_view.reflectScrolledClipView_(self._scroll_view.contentView())
         else:
             ch = SHELF_HEADER_HEIGHT + min(
                 self._content_height_for_rows(rows), self._max_list_height()
             )
-
-        self._apply_window_height(ch, animated=True)
+            self._apply_window_height(ch, animated=True)
 
         dh = ch - SHELF_HEADER_HEIGHT
 
@@ -1520,7 +1411,7 @@ class ShelfWindow:
 
     def _content_height_for_rows(self, rows):
         if not rows:
-            return 160
+            return 0
         height = SHELF_PADDING * 2
         for row in rows:
             if row["kind"] == "section":
@@ -1529,7 +1420,7 @@ class ShelfWindow:
                 height += SHELF_ITEM_HEIGHT + ITEM_GAP
             else:
                 height += SHELF_ITEM_HEIGHT + ITEM_GAP
-        return max(height, 160)
+        return height
 
     def _visible_selection_range(self, start_index, end_index):
         visible = self._flat_visible_indices()

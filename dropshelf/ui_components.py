@@ -242,7 +242,7 @@ class ToastBannerView(NSView):
         return None
 
     def setAttachment_(self, attachment):
-        attachment = attachment if attachment in {"above", "below"} else "below"
+        attachment = attachment if attachment in {"above", "below", "internal"} else "below"
         if self._attachment == attachment:
             return
         self._attachment = attachment
@@ -257,6 +257,11 @@ class ToastBannerView(NSView):
         )
 
     def _body_fill_path(self, body_rect, radius):
+        if self._attachment == "internal":
+            return NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                body_rect, radius, radius
+            )
+
         left = body_rect.origin.x
         top = body_rect.origin.y
         right = body_rect.origin.x + body_rect.size.width
@@ -265,7 +270,6 @@ class ToastBannerView(NSView):
 
         path = NSBezierPath.bezierPath()
         if self._attachment == "above":
-            # Rounded top corners (away from shelf), flat bottom
             path.moveToPoint_(NSMakePoint(left, bottom))
             path.lineToPoint_(NSMakePoint(right, bottom))
             path.lineToPoint_(NSMakePoint(right, top + radius))
@@ -282,7 +286,6 @@ class ToastBannerView(NSView):
             )
             path.lineToPoint_(NSMakePoint(left, bottom))
         else:
-            # Rounded bottom corners (away from shelf), flat top
             path.moveToPoint_(NSMakePoint(left, top))
             path.lineToPoint_(NSMakePoint(right, top))
             path.lineToPoint_(NSMakePoint(right, bottom - radius))
@@ -302,6 +305,11 @@ class ToastBannerView(NSView):
         return path
 
     def _body_outline_path(self, body_rect, radius):
+        if self._attachment == "internal":
+            return NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                body_rect, radius, radius
+            )
+
         left = body_rect.origin.x
         top = body_rect.origin.y
         right = body_rect.origin.x + body_rect.size.width
@@ -310,7 +318,6 @@ class ToastBannerView(NSView):
 
         path = NSBezierPath.bezierPath()
         if self._attachment == "above":
-            # U-shape opening at the bottom (toward shelf)
             path.moveToPoint_(NSMakePoint(left, bottom))
             path.lineToPoint_(NSMakePoint(left, top + radius))
             path.appendBezierPathWithArcFromPoint_toPoint_radius_(
@@ -326,7 +333,6 @@ class ToastBannerView(NSView):
             )
             path.lineToPoint_(NSMakePoint(right, bottom))
         else:
-            # U-shape opening at the top (toward shelf)
             path.moveToPoint_(NSMakePoint(left, top))
             path.lineToPoint_(NSMakePoint(left, bottom - radius))
             path.appendBezierPathWithArcFromPoint_toPoint_radius_(

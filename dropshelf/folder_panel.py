@@ -677,9 +677,14 @@ class FolderPanel:
 
     def _update_lip_surface_frames(self, side):
         h = self._lip_height
-        body_frame = NSMakeRect(0, 0, self._lip_total_width, h)
-        self._lip_bg.setFrame_(body_frame)
-        self._lip_chevron.setFrame_(body_frame)
+        w = self._lip_total_width
+        self._lip_bg.setFrame_(NSMakeRect(0, 0, w, h))
+        # Center chevron in the visible portion only (not hidden behind shelf)
+        visible_w = w - FOLDER_TAB_DOCK_OVERLAP
+        if side == "left":
+            self._lip_chevron.setFrame_(NSMakeRect(0, 0, visible_w, h))
+        else:
+            self._lip_chevron.setFrame_(NSMakeRect(FOLDER_TAB_DOCK_OVERLAP, 0, visible_w, h))
 
     def _resize_lip(self, height):
         height = int(height)
@@ -690,7 +695,7 @@ class FolderPanel:
         self._lip_window.setContentSize_(NSMakeSize(w, height))
         self._lip_bg.setFrame_(NSMakeRect(0, 0, w, height))
         self._lip_btn.setFrame_(NSMakeRect(0, 0, w, height))
-        self._lip_chevron.setFrame_(NSMakeRect(0, 0, w, height))
+        self._update_lip_surface_frames(self._drawer_side)
 
     def _layout_frames(self, side=None):
         side = side or self._choose_drawer_side()

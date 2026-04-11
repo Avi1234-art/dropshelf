@@ -46,6 +46,7 @@ from .constants import (
     FOLDER_PANEL_ITEM_GAP,
     FOLDER_PANEL_MIN_HEIGHT,
     FOLDER_PANEL_PADDING,
+    FOLDER_PANEL_SHELF_GAP,
     FOLDER_PANEL_WIDTH,
     FOLDER_TAB_DOCK_OVERLAP,
     FOLDER_TAB_HEIGHT_RATIO,
@@ -647,22 +648,19 @@ class FolderPanel:
         shelf_x, _, shelf_w, _ = self._shelf_geometry()
         shelf_right = shelf_x + shelf_w
 
-        left_panel_x = (
-            shelf_x - FOLDER_PANEL_WIDTH - self._lip_total_width + FOLDER_TAB_DOCK_OVERLAP
-        )
-        right_panel_x = (
-            shelf_right + self._lip_total_width - FOLDER_TAB_DOCK_OVERLAP
-        )
+        left_panel_x = shelf_x - FOLDER_PANEL_WIDTH - FOLDER_PANEL_SHELF_GAP
+        right_panel_x = shelf_right + FOLDER_PANEL_SHELF_GAP
 
-        left_fits = left_panel_x >= safe_left
-        right_fits = right_panel_x + FOLDER_PANEL_WIDTH <= safe_right
+        # Check if full layout (tab + panel) fits
+        left_fits = (left_panel_x - self._lip_total_width) >= safe_left
+        right_fits = (right_panel_x + FOLDER_PANEL_WIDTH + self._lip_total_width) <= safe_right
         if left_fits:
             return "left"
         if right_fits:
             return "right"
 
-        left_overflow = max(0, safe_left - left_panel_x)
-        right_overflow = max(0, right_panel_x + FOLDER_PANEL_WIDTH - safe_right)
+        left_overflow = max(0, safe_left - (left_panel_x - self._lip_total_width))
+        right_overflow = max(0, right_panel_x + FOLDER_PANEL_WIDTH + self._lip_total_width - safe_right)
         return "left" if left_overflow <= right_overflow else "right"
 
     def _tab_symbol(self, side):
@@ -708,7 +706,6 @@ class FolderPanel:
         tab_h = max(FOLDER_TAB_MIN_HEIGHT, int(shelf_h * FOLDER_TAB_HEIGHT_RATIO))
         self._resize_lip(tab_h)
 
-        tab_y = shelf_y + (shelf_h - tab_h) / 2
         panel_y = shelf_y + shelf_h - panel_h
         panel_y = max(visible.origin.y + 10, panel_y)
         panel_y = min(
@@ -718,14 +715,24 @@ class FolderPanel:
 
         if side == "left":
             shelf_tab_x = shelf_x - self._lip_total_width + FOLDER_TAB_DOCK_OVERLAP
-            panel_x = shelf_tab_x - FOLDER_PANEL_WIDTH
+            panel_x = shelf_x - FOLDER_PANEL_WIDTH - FOLDER_PANEL_SHELF_GAP
             hidden_panel_x = panel_x + DRAWER_REVEAL_OFFSET
-            tab_x = (panel_x - self._lip_total_width) if self._panel_open else shelf_tab_x
+            if self._panel_open:
+                tab_x = panel_x - self._lip_total_width
+                tab_y = panel_y + (panel_h - tab_h) / 2
+            else:
+                tab_x = shelf_tab_x
+                tab_y = shelf_y + (shelf_h - tab_h) / 2
         else:
             shelf_tab_x = shelf_right - FOLDER_TAB_DOCK_OVERLAP
-            panel_x = shelf_tab_x + self._lip_total_width
+            panel_x = shelf_right + FOLDER_PANEL_SHELF_GAP
             hidden_panel_x = panel_x - DRAWER_REVEAL_OFFSET
-            tab_x = (panel_x + FOLDER_PANEL_WIDTH) if self._panel_open else shelf_tab_x
+            if self._panel_open:
+                tab_x = panel_x + FOLDER_PANEL_WIDTH
+                tab_y = panel_y + (panel_h - tab_h) / 2
+            else:
+                tab_x = shelf_tab_x
+                tab_y = shelf_y + (shelf_h - tab_h) / 2
 
         return {
             "side": side,

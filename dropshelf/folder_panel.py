@@ -651,16 +651,17 @@ class FolderPanel:
         left_panel_x = shelf_x - FOLDER_PANEL_WIDTH - FOLDER_PANEL_SHELF_GAP
         right_panel_x = shelf_right + FOLDER_PANEL_SHELF_GAP
 
-        # Check if full layout (tab + panel) fits
-        left_fits = (left_panel_x - self._lip_total_width) >= safe_left
-        right_fits = (right_panel_x + FOLDER_PANEL_WIDTH + self._lip_total_width) <= safe_right
+        # Check if full layout (tab peek + panel) fits
+        tab_peek = self._lip_total_width - FOLDER_TAB_DOCK_OVERLAP
+        left_fits = (left_panel_x - tab_peek) >= safe_left
+        right_fits = (right_panel_x + FOLDER_PANEL_WIDTH + tab_peek) <= safe_right
         if left_fits:
             return "left"
         if right_fits:
             return "right"
 
-        left_overflow = max(0, safe_left - (left_panel_x - self._lip_total_width))
-        right_overflow = max(0, right_panel_x + FOLDER_PANEL_WIDTH + self._lip_total_width - safe_right)
+        left_overflow = max(0, safe_left - (left_panel_x - tab_peek))
+        right_overflow = max(0, right_panel_x + FOLDER_PANEL_WIDTH + tab_peek - safe_right)
         return "left" if left_overflow <= right_overflow else "right"
 
     def _tab_symbol(self, side):
@@ -677,16 +678,12 @@ class FolderPanel:
         h = self._lip_height
         w = self._lip_total_width
         self._lip_bg.setFrame_(NSMakeRect(0, 0, w, h))
-        if self._panel_open:
-            # Full handle visible next to panel — center chevron in full width
-            self._lip_chevron.setFrame_(NSMakeRect(0, 0, w, h))
+        # Center chevron in visible peek (handle is always tucked behind shelf or panel)
+        visible_w = w - FOLDER_TAB_DOCK_OVERLAP
+        if side == "left":
+            self._lip_chevron.setFrame_(NSMakeRect(0, 0, visible_w, h))
         else:
-            # Only visible portion when tucked behind shelf
-            visible_w = w - FOLDER_TAB_DOCK_OVERLAP
-            if side == "left":
-                self._lip_chevron.setFrame_(NSMakeRect(0, 0, visible_w, h))
-            else:
-                self._lip_chevron.setFrame_(NSMakeRect(FOLDER_TAB_DOCK_OVERLAP, 0, visible_w, h))
+            self._lip_chevron.setFrame_(NSMakeRect(FOLDER_TAB_DOCK_OVERLAP, 0, visible_w, h))
 
     def _resize_lip(self, height):
         height = int(height)
@@ -722,7 +719,8 @@ class FolderPanel:
             panel_x = shelf_x - FOLDER_PANEL_WIDTH - FOLDER_PANEL_SHELF_GAP
             hidden_panel_x = panel_x + DRAWER_REVEAL_OFFSET
             if self._panel_open:
-                tab_x = panel_x - self._lip_total_width
+                # Tuck handle behind panel's left edge (same overlap as behind shelf)
+                tab_x = panel_x - self._lip_total_width + FOLDER_TAB_DOCK_OVERLAP
                 tab_y = panel_y + (panel_h - tab_h) / 2
             else:
                 tab_x = shelf_tab_x
@@ -732,7 +730,8 @@ class FolderPanel:
             panel_x = shelf_right + FOLDER_PANEL_SHELF_GAP
             hidden_panel_x = panel_x - DRAWER_REVEAL_OFFSET
             if self._panel_open:
-                tab_x = panel_x + FOLDER_PANEL_WIDTH
+                # Tuck handle behind panel's right edge
+                tab_x = panel_x + FOLDER_PANEL_WIDTH - FOLDER_TAB_DOCK_OVERLAP
                 tab_y = panel_y + (panel_h - tab_h) / 2
             else:
                 tab_x = shelf_tab_x
@@ -768,6 +767,9 @@ class FolderPanel:
 
     def show(self):
         layout = self._position_windows()
+        # Handle always behind shelf+panel so it tucks under whichever edge
+        self._attach_child_window(self._lip_window, ordered=-1)
+        self._lip_window.orderFront_(None)
         if self._panel_open:
             self._panel_window.setAlphaValue_(1.0)
             self._panel_window.setFrameOrigin_(
@@ -775,13 +777,6 @@ class FolderPanel:
             )
             self._attach_child_window(self._panel_window)
             self._panel_window.orderFront_(None)
-            # Lip sits beside panel, same z-level
-            self._attach_child_window(self._lip_window, ordered=1)
-            self._lip_window.orderFront_(None)
-        else:
-            # Lip renders behind the shelf so the shelf edge sits on top
-            self._attach_child_window(self._lip_window, ordered=-1)
-            self._lip_window.orderFront_(None)
 
     def hide(self):
         self._lip_window.orderOut_(None)
@@ -808,8 +803,8 @@ class FolderPanel:
         self._panel_window.setAlphaValue_(0.0)
         self._attach_child_window(self._panel_window)
         self._panel_window.orderFront_(None)
-        # Snap lip to panel edge, same z-level so it's visible
-        self._attach_child_window(self._lip_window, ordered=1)
+        # Handle tucked behind panel edge
+        self._attach_child_window(self._lip_window, ordered=-1)
         self._lip_window.orderFront_(None)
         self._lip_window.setFrameOrigin_(
             NSMakePoint(layout["tab"].origin.x, layout["tab"].origin.y)

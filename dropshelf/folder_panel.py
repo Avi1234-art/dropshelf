@@ -237,8 +237,8 @@ class DrawerChevronView(NSView):
         bounds = self.bounds()
         cx = bounds.size.width / 2
         cy = bounds.size.height / 2
-        half_w = 5.0
-        half_h = 7.0
+        half_w = 3.0
+        half_h = 5.0
         path = NSBezierPath.bezierPath()
         if self._direction == "left":
             path.moveToPoint_(NSMakePoint(cx + half_w, cy - half_h))
@@ -248,7 +248,7 @@ class DrawerChevronView(NSView):
             path.moveToPoint_(NSMakePoint(cx - half_w, cy - half_h))
             path.lineToPoint_(NSMakePoint(cx + half_w, cy))
             path.lineToPoint_(NSMakePoint(cx - half_w, cy + half_h))
-        path.setLineWidth_(3.4)
+        path.setLineWidth_(1.8)
         path.setLineCapStyle_(1)
         path.setLineJoinStyle_(1)
         NSColor.whiteColor().colorWithAlphaComponent_(0.92).set()

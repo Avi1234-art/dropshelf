@@ -752,6 +752,7 @@ class FolderPanel:
         layout = self._position_windows()
         # Lip renders behind the shelf so the shelf edge sits on top
         self._attach_child_window(self._lip_window, ordered=-1)
+        self._lip_window.orderFront_(None)
         if self._panel_open:
             self._panel_window.setAlphaValue_(1.0)
             self._panel_window.setFrameOrigin_(

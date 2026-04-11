@@ -46,6 +46,14 @@ app_launcher.c            # Compiled C stub used as the .app executable
 
 - **Thumbnails** are loaded asynchronously. `_setup_ui` shows `NSWorkspace.iconForFile_` instantly, then `_load_thumbnail_async` runs `qlmanage` on a background thread and applies the result on the main thread via `performSelectorOnMainThread_`.
 
+## Known Gotchas
+
+- **NSTextField vs NSButton text baselines don't match.** Even with identical y/height/font, the two controls render text at different vertical positions. The header count label was converted to a borderless disabled NSButton to guarantee alignment with the Clear All button. If adding new text to the header, use NSButton for consistency.
+
+- **NSTextField eats width inside badges.** NSTextField has internal cell margins (~3px/side) that reduce the actual text drawing area. Size badge padding must account for this (currently `text_size.width + 20`). If badge text appears truncated, increase padding — don't just match the measured text width.
+
+- **`_endDropAnimation(restore_layout=False)`** skips the window height restoration and content frame animation. Used in `performDragOperation_` to avoid a visible double-resize (shrink to pre-drop height, then re-expand for new items). Other callers (draggingExited_, clear_all) should use the default `restore_layout=True`.
+
 ## Key Patterns
 
 - **Generation counters** (`_toast_generation`, `_show_hide_generation`) invalidate stale animation callbacks. Every show/hide/toast bumps the counter; the callback checks it before acting.

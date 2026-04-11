@@ -48,7 +48,8 @@ from .constants import (
     FOLDER_PANEL_PADDING,
     FOLDER_PANEL_WIDTH,
     FOLDER_TAB_DOCK_OVERLAP,
-    FOLDER_TAB_HEIGHT,
+    FOLDER_TAB_HEIGHT_RATIO,
+    FOLDER_TAB_MIN_HEIGHT,
     FOLDER_TAB_VISIBLE_WIDTH,
     SHELF_HEADER_HEIGHT,
     SHELF_WIDTH,
@@ -356,10 +357,11 @@ class FolderPanel:
         )
 
     def _build_lip(self):
-        total_w = FOLDER_TAB_VISIBLE_WIDTH + FOLDER_TAB_DOCK_OVERLAP
+        total_w = FOLDER_TAB_VISIBLE_WIDTH
+        initial_h = FOLDER_TAB_MIN_HEIGHT
 
         self._lip_window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
-            NSMakeRect(0, 0, total_w, FOLDER_TAB_HEIGHT),
+            NSMakeRect(0, 0, total_w, initial_h),
             NSWindowStyleMaskBorderless,
             NSBackingStoreBuffered,
             False,
@@ -371,20 +373,21 @@ class FolderPanel:
         self._lip_window.setHidesOnDeactivate_(False)
         self._lip_window.setCollectionBehavior_(NSWindowCollectionBehaviorCanJoinAllSpaces)
         self._lip_total_width = total_w
+        self._lip_height = initial_h
 
         cv = self._lip_window.contentView()
-        bg = NSVisualEffectView.alloc().initWithFrame_(
-            NSMakeRect(0, 0, total_w, FOLDER_TAB_HEIGHT)
+        body = NSVisualEffectView.alloc().initWithFrame_(
+            NSMakeRect(0, 0, total_w, initial_h)
         )
-        self._apply_surface_chrome(bg, CORNER_RADIUS - 4)
-        bg.layer().setBorderColor_(
+        self._apply_surface_chrome(body, CORNER_RADIUS)
+        body.layer().setBorderColor_(
             NSColor.whiteColor().colorWithAlphaComponent_(0.24).CGColor()
         )
-        cv.addSubview_(bg)
-        self._lip_bg = bg
+        cv.addSubview_(body)
+        self._lip_bg = body
 
         self._lip_toggle_proxy = ActionProxy.alloc().initWithCallback_(self.toggle_panel)
-        btn = NSButton.alloc().initWithFrame_(NSMakeRect(0, 0, total_w, FOLDER_TAB_HEIGHT))
+        btn = NSButton.alloc().initWithFrame_(NSMakeRect(0, 0, total_w, initial_h))
         btn.setBordered_(False)
         btn.setTitle_("")
         btn.setTarget_(self._lip_toggle_proxy)
@@ -393,7 +396,7 @@ class FolderPanel:
         self._lip_btn = btn
 
         chevron = DrawerChevronView.alloc().initWithFrame_(
-            NSMakeRect(0, 0, total_w, FOLDER_TAB_HEIGHT)
+            NSMakeRect(0, 0, total_w, initial_h)
         )
         cv.addSubview_(chevron)
         self._lip_chevron = chevron
@@ -644,11 +647,11 @@ class FolderPanel:
         shelf_x, _, shelf_w, _ = self._shelf_geometry()
         shelf_right = shelf_x + shelf_w
 
-        left_panel_x = shelf_x - FOLDER_PANEL_WIDTH - (
-            FOLDER_TAB_VISIBLE_WIDTH - FOLDER_TAB_DOCK_OVERLAP
+        left_panel_x = (
+            shelf_x - FOLDER_PANEL_WIDTH - self._lip_total_width + FOLDER_TAB_DOCK_OVERLAP
         )
-        right_panel_x = shelf_right + (
-            FOLDER_TAB_VISIBLE_WIDTH - FOLDER_TAB_DOCK_OVERLAP
+        right_panel_x = (
+            shelf_right + self._lip_total_width - FOLDER_TAB_DOCK_OVERLAP
         )
 
         left_fits = left_panel_x >= safe_left
@@ -668,8 +671,26 @@ class FolderPanel:
         return "\u2039" if self._panel_open else "\u203a"
 
     def _sync_tab_symbol(self):
+        self._update_lip_surface_frames(self._drawer_side)
         direction = "right" if self._tab_symbol(self._drawer_side) == "\u203a" else "left"
         self._lip_chevron.setDirection_(direction)
+
+    def _update_lip_surface_frames(self, side):
+        h = self._lip_height
+        body_frame = NSMakeRect(0, 0, self._lip_total_width, h)
+        self._lip_bg.setFrame_(body_frame)
+        self._lip_chevron.setFrame_(body_frame)
+
+    def _resize_lip(self, height):
+        height = int(height)
+        if height == self._lip_height:
+            return
+        self._lip_height = height
+        w = self._lip_total_width
+        self._lip_window.setContentSize_(NSMakeSize(w, height))
+        self._lip_bg.setFrame_(NSMakeRect(0, 0, w, height))
+        self._lip_btn.setFrame_(NSMakeRect(0, 0, w, height))
+        self._lip_chevron.setFrame_(NSMakeRect(0, 0, w, height))
 
     def _layout_frames(self, side=None):
         side = side or self._choose_drawer_side()
@@ -677,7 +698,12 @@ class FolderPanel:
         visible = self._screen_visible_frame()
         shelf_right = shelf_x + shelf_w
         panel_h = self._panel_window.frame().size.height
-        tab_y = shelf_y + (shelf_h - FOLDER_TAB_HEIGHT) / 2
+
+        # Dynamic tab height: ~32% of shelf, vertically centered
+        tab_h = max(FOLDER_TAB_MIN_HEIGHT, int(shelf_h * FOLDER_TAB_HEIGHT_RATIO))
+        self._resize_lip(tab_h)
+
+        tab_y = shelf_y + (shelf_h - tab_h) / 2
         panel_y = shelf_y + shelf_h - panel_h
         panel_y = max(visible.origin.y + 10, panel_y)
         panel_y = min(
@@ -686,21 +712,17 @@ class FolderPanel:
         )
 
         if side == "left":
-            tab_x = shelf_x - FOLDER_TAB_VISIBLE_WIDTH
-            panel_x = shelf_x - FOLDER_PANEL_WIDTH - (
-                FOLDER_TAB_VISIBLE_WIDTH - FOLDER_TAB_DOCK_OVERLAP
-            )
+            tab_x = shelf_x - self._lip_total_width + FOLDER_TAB_DOCK_OVERLAP
+            panel_x = tab_x - FOLDER_PANEL_WIDTH
             hidden_panel_x = panel_x + DRAWER_REVEAL_OFFSET
         else:
             tab_x = shelf_right - FOLDER_TAB_DOCK_OVERLAP
-            panel_x = shelf_right + (
-                FOLDER_TAB_VISIBLE_WIDTH - FOLDER_TAB_DOCK_OVERLAP
-            )
+            panel_x = tab_x + self._lip_total_width
             hidden_panel_x = panel_x - DRAWER_REVEAL_OFFSET
 
         return {
             "side": side,
-            "tab": NSMakeRect(tab_x, tab_y, self._lip_total_width, FOLDER_TAB_HEIGHT),
+            "tab": NSMakeRect(tab_x, tab_y, self._lip_total_width, tab_h),
             "panel": NSMakeRect(panel_x, panel_y, FOLDER_PANEL_WIDTH, panel_h),
             "hidden_panel": NSMakeRect(
                 hidden_panel_x, panel_y, FOLDER_PANEL_WIDTH, panel_h
@@ -720,16 +742,16 @@ class FolderPanel:
             )
         return layout
 
-    def _attach_child_window(self, child):
+    def _attach_child_window(self, child, ordered=1):
         main = self._shelf_window._window
         if child in (main.childWindows() or []):
             main.removeChildWindow_(child)
-        main.addChildWindow_ordered_(child, 1)
+        main.addChildWindow_ordered_(child, ordered)
 
     def show(self):
         layout = self._position_windows()
-        self._attach_child_window(self._lip_window)
-        self._lip_window.orderFront_(None)
+        # Lip renders behind the shelf so the shelf edge sits on top
+        self._attach_child_window(self._lip_window, ordered=-1)
         if self._panel_open:
             self._panel_window.setAlphaValue_(1.0)
             self._panel_window.setFrameOrigin_(
@@ -737,8 +759,6 @@ class FolderPanel:
             )
             self._attach_child_window(self._panel_window)
             self._panel_window.orderFront_(None)
-            self._attach_child_window(self._lip_window)
-            self._lip_window.orderFront_(None)
 
     def hide(self):
         self._lip_window.orderOut_(None)
@@ -768,8 +788,6 @@ class FolderPanel:
         self._panel_window.setAlphaValue_(0.0)
         self._attach_child_window(self._panel_window)
         self._panel_window.orderFront_(None)
-        self._attach_child_window(self._lip_window)
-        self._lip_window.orderFront_(None)
 
         NSAnimationContext.beginGrouping()
         NSAnimationContext.currentContext().setDuration_(0.2)

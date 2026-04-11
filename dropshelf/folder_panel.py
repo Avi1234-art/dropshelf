@@ -717,13 +717,15 @@ class FolderPanel:
         )
 
         if side == "left":
-            tab_x = shelf_x - self._lip_total_width + FOLDER_TAB_DOCK_OVERLAP
-            panel_x = tab_x - FOLDER_PANEL_WIDTH
+            shelf_tab_x = shelf_x - self._lip_total_width + FOLDER_TAB_DOCK_OVERLAP
+            panel_x = shelf_tab_x - FOLDER_PANEL_WIDTH
             hidden_panel_x = panel_x + DRAWER_REVEAL_OFFSET
+            tab_x = (panel_x - self._lip_total_width) if self._panel_open else shelf_tab_x
         else:
-            tab_x = shelf_right - FOLDER_TAB_DOCK_OVERLAP
-            panel_x = tab_x + self._lip_total_width
+            shelf_tab_x = shelf_right - FOLDER_TAB_DOCK_OVERLAP
+            panel_x = shelf_tab_x + self._lip_total_width
             hidden_panel_x = panel_x - DRAWER_REVEAL_OFFSET
+            tab_x = (panel_x + FOLDER_PANEL_WIDTH) if self._panel_open else shelf_tab_x
 
         return {
             "side": side,
@@ -755,9 +757,6 @@ class FolderPanel:
 
     def show(self):
         layout = self._position_windows()
-        # Lip renders behind the shelf so the shelf edge sits on top
-        self._attach_child_window(self._lip_window, ordered=-1)
-        self._lip_window.orderFront_(None)
         if self._panel_open:
             self._panel_window.setAlphaValue_(1.0)
             self._panel_window.setFrameOrigin_(
@@ -765,6 +764,13 @@ class FolderPanel:
             )
             self._attach_child_window(self._panel_window)
             self._panel_window.orderFront_(None)
+            # Lip sits beside panel, same z-level
+            self._attach_child_window(self._lip_window, ordered=1)
+            self._lip_window.orderFront_(None)
+        else:
+            # Lip renders behind the shelf so the shelf edge sits on top
+            self._attach_child_window(self._lip_window, ordered=-1)
+            self._lip_window.orderFront_(None)
 
     def hide(self):
         self._lip_window.orderOut_(None)
@@ -787,13 +793,16 @@ class FolderPanel:
         layout = self._layout_frames()
         self._drawer_side = layout["side"]
         self._sync_tab_symbol()
-        self._lip_window.setFrameOrigin_(
-            NSMakePoint(layout["tab"].origin.x, layout["tab"].origin.y)
-        )
         self._panel_window.setFrame_display_(layout["hidden_panel"], False)
         self._panel_window.setAlphaValue_(0.0)
         self._attach_child_window(self._panel_window)
         self._panel_window.orderFront_(None)
+        # Snap lip to panel edge, same z-level so it's visible
+        self._attach_child_window(self._lip_window, ordered=1)
+        self._lip_window.orderFront_(None)
+        self._lip_window.setFrameOrigin_(
+            NSMakePoint(layout["tab"].origin.x, layout["tab"].origin.y)
+        )
 
         NSAnimationContext.beginGrouping()
         NSAnimationContext.currentContext().setDuration_(0.2)
@@ -807,6 +816,13 @@ class FolderPanel:
         layout = self._layout_frames(side=self._drawer_side)
         self._panel_open = False
         self._sync_tab_symbol()
+        # Snap lip back to shelf edge, behind shelf
+        close_layout = self._layout_frames(side=self._drawer_side)
+        self._attach_child_window(self._lip_window, ordered=-1)
+        self._lip_window.orderFront_(None)
+        self._lip_window.setFrameOrigin_(
+            NSMakePoint(close_layout["tab"].origin.x, close_layout["tab"].origin.y)
+        )
 
         NSAnimationContext.beginGrouping()
         NSAnimationContext.currentContext().setDuration_(0.18)

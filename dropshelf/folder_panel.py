@@ -62,8 +62,10 @@ from .settings import save_settings
 from .ui_components import ActionProxy
 
 
-ICON_SIZE = 36
-DRAWER_REVEAL_OFFSET = 18
+ICON_SIZE = 30
+ADD_ICON_SIZE = 28
+DRAWER_REVEAL_OFFSET = 16
+ROW_RADIUS = 8
 
 
 def _count_files_in_folder(path):
@@ -74,11 +76,11 @@ def _count_files_in_folder(path):
 
 
 class FolderItemView(NSView):
-    """A single folder row — horizontal: icon left, name + count right."""
+    """A compact folder destination row."""
 
     @classmethod
     def make_item(cls, folder_path, remove_callback, move_callback):
-        item_w = FOLDER_PANEL_WIDTH - 16
+        item_w = FOLDER_PANEL_WIDTH - FOLDER_PANEL_PADDING * 2
         view = cls.alloc().initWithFrame_(
             NSMakeRect(0, 0, item_w, FOLDER_ITEM_HEIGHT)
         )
@@ -102,19 +104,19 @@ class FolderItemView(NSView):
         icon = NSWorkspace.sharedWorkspace().iconForFile_(path)
         icon.setSize_(NSMakeSize(ICON_SIZE, ICON_SIZE))
         icon_y = (FOLDER_ITEM_HEIGHT - ICON_SIZE) // 2
-        iv = NSImageView.alloc().initWithFrame_(NSMakeRect(8, icon_y, ICON_SIZE, ICON_SIZE))
+        iv = NSImageView.alloc().initWithFrame_(NSMakeRect(10, icon_y, ICON_SIZE, ICON_SIZE))
         iv.setImage_(icon)
         iv.setImageScaling_(NSImageScaleProportionallyUpOrDown)
         self.addSubview_(iv)
 
-        text_x = 8 + ICON_SIZE + 8
-        text_w = item_w - text_x - 4
+        text_x = 10 + ICON_SIZE + 10
+        text_w = item_w - text_x - 10
 
-        if len(name) > 14:
-            name = name[:12] + "…"
+        if len(name) > 18:
+            name = name[:15] + "..."
         name_lbl = NSTextField.labelWithString_(name)
-        name_lbl.setFrame_(NSMakeRect(text_x, 10, text_w, 18))
-        name_lbl.setFont_(NSFont.systemFontOfSize_weight_(13, 0.5))
+        name_lbl.setFrame_(NSMakeRect(text_x, 9, text_w, 18))
+        name_lbl.setFont_(NSFont.systemFontOfSize_weight_(12.5, 0.52))
         name_lbl.setTextColor_(NSColor.labelColor())
         name_lbl.setDrawsBackground_(False)
         name_lbl.setBezeled_(False)
@@ -125,8 +127,8 @@ class FolderItemView(NSView):
         count = _count_files_in_folder(path)
         count_str = f"{count} file{'s' if count != 1 else ''}"
         count_lbl = NSTextField.labelWithString_(count_str)
-        count_lbl.setFrame_(NSMakeRect(text_x, 30, text_w, 16))
-        count_lbl.setFont_(NSFont.systemFontOfSize_(11))
+        count_lbl.setFrame_(NSMakeRect(text_x, 28, text_w, 15))
+        count_lbl.setFont_(NSFont.systemFontOfSize_weight_(11, 0.24))
         count_lbl.setTextColor_(NSColor.secondaryLabelColor())
         count_lbl.setDrawsBackground_(False)
         count_lbl.setBezeled_(False)
@@ -166,13 +168,15 @@ class FolderItemView(NSView):
         bounds = self.bounds()
         r = NSMakeRect(2, 2, bounds.size.width - 4, bounds.size.height - 4)
         if self._drop_targeted:
-            NSColor.systemBlueColor().colorWithAlphaComponent_(0.25).set()
-            NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(r, 8, 8).fill()
-            NSColor.systemBlueColor().colorWithAlphaComponent_(0.6).set()
-            NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(r, 8, 8).stroke()
+            NSColor.systemBlueColor().colorWithAlphaComponent_(0.18).set()
+            NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(r, ROW_RADIUS, ROW_RADIUS).fill()
+            NSColor.systemBlueColor().colorWithAlphaComponent_(0.58).set()
+            path = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(r, ROW_RADIUS, ROW_RADIUS)
+            path.setLineWidth_(1.2)
+            path.stroke()
         elif self._hovered:
-            NSColor.colorWithWhite_alpha_(0.5, 0.1).set()
-            NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(r, 8, 8).fill()
+            NSColor.colorWithWhite_alpha_(1.0, 0.08).set()
+            NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(r, ROW_RADIUS, ROW_RADIUS).fill()
 
     # --- NSDraggingDestination ---
     def draggingEntered_(self, sender):
@@ -213,12 +217,13 @@ class FlippedView(NSView):
         return True
 
 
-class DrawerChevronView(NSView):
+class DrawerTabView(NSView):
     def initWithFrame_(self, frame):
-        self = objc.super(DrawerChevronView, self).initWithFrame_(frame)
+        self = objc.super(DrawerTabView, self).initWithFrame_(frame)
         if self is None:
             return None
-        self._direction = "left"
+        self._side = "left"
+        self._open = False
         return self
 
     def isFlipped(self):
@@ -227,54 +232,76 @@ class DrawerChevronView(NSView):
     def hitTest_(self, point):
         return None
 
-    def setDirection_(self, direction):
-        direction = direction if direction in {"left", "right"} else "left"
-        if direction == self._direction:
+    def setState(self, side, is_open):
+        side = side if side in {"left", "right"} else "left"
+        is_open = bool(is_open)
+        if side == self._side and is_open == self._open:
             return
-        self._direction = direction
+        self._side = side
+        self._open = is_open
         self.setNeedsDisplay_(True)
 
     def drawRect_(self, rect):
         bounds = self.bounds()
-        cx = bounds.size.width / 2
-        cy = bounds.size.height / 2
-        half_w = 2.5
-        half_h = 4.0
-        path = NSBezierPath.bezierPath()
-        if self._direction == "left":
-            path.moveToPoint_(NSMakePoint(cx + half_w, cy - half_h))
-            path.lineToPoint_(NSMakePoint(cx - half_w, cy))
-            path.lineToPoint_(NSMakePoint(cx + half_w, cy + half_h))
+        body = NSMakeRect(0.5, 0.5, bounds.size.width - 1, bounds.size.height - 1)
+        NSColor.colorWithWhite_alpha_(0.13, 0.72).set()
+        NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(body, 11, 11).fill()
+        NSColor.colorWithWhite_alpha_(1.0, 0.18).set()
+        border = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(body, 11, 11)
+        border.setLineWidth_(0.8)
+        border.stroke()
+
+        visible_w = bounds.size.width - FOLDER_TAB_DOCK_OVERLAP
+        if self._side == "left":
+            cx = visible_w / 2
         else:
+            cx = FOLDER_TAB_DOCK_OVERLAP + visible_w / 2
+        cy = bounds.size.height / 2
+        arrow_points_right = (
+            (self._side == "left" and self._open)
+            or (self._side == "right" and not self._open)
+        )
+
+        half_w = 2.8
+        half_h = 4.8
+        path = NSBezierPath.bezierPath()
+        if arrow_points_right:
             path.moveToPoint_(NSMakePoint(cx - half_w, cy - half_h))
             path.lineToPoint_(NSMakePoint(cx + half_w, cy))
             path.lineToPoint_(NSMakePoint(cx - half_w, cy + half_h))
+        else:
+            path.moveToPoint_(NSMakePoint(cx + half_w, cy - half_h))
+            path.lineToPoint_(NSMakePoint(cx - half_w, cy))
+            path.lineToPoint_(NSMakePoint(cx + half_w, cy + half_h))
         path.setLineWidth_(1.4)
         path.setLineCapStyle_(1)
         path.setLineJoinStyle_(1)
-        NSColor.whiteColor().colorWithAlphaComponent_(0.8).set()
+        NSColor.whiteColor().colorWithAlphaComponent_(0.82).set()
         path.stroke()
 
 
 class AddFolderView(NSView):
-    """Dashed border '+' button with 'New Folder' text."""
+    """Compact add-folder row."""
 
     def isFlipped(self):
         return True
 
     def drawRect_(self, rect):
         bounds = self.bounds()
-        # Dashed icon area
-        icon_rect = NSMakeRect(8, 4, ICON_SIZE, ICON_SIZE)
-        dash_path = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(icon_rect, 6, 6)
-        dash_path.setLineWidth_(1.0)
+        row_rect = NSMakeRect(2, 2, bounds.size.width - 4, bounds.size.height - 4)
+        NSColor.colorWithWhite_alpha_(1.0, 0.035).set()
+        NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(row_rect, ROW_RADIUS, ROW_RADIUS).fill()
+
+        icon_y = (bounds.size.height - ADD_ICON_SIZE) / 2
+        icon_rect = NSMakeRect(11, icon_y, ADD_ICON_SIZE, ADD_ICON_SIZE)
+        dash_path = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(icon_rect, 7, 7)
+        dash_path.setLineWidth_(1.1)
         dash_path.setLineDash_count_phase_([4.0, 3.0], 2, 0)
-        NSColor.secondaryLabelColor().colorWithAlphaComponent_(0.4).set()
+        NSColor.secondaryLabelColor().colorWithAlphaComponent_(0.38).set()
         dash_path.stroke()
 
-        # "+" in the center of the dashed box
         plus_attrs = NSMutableDictionary.alloc().init()
-        plus_attrs[NSFontAttributeName] = NSFont.systemFontOfSize_weight_(18, 0.2)
+        plus_attrs[NSFontAttributeName] = NSFont.systemFontOfSize_weight_(16, 0.25)
         plus_attrs[NSForegroundColorAttributeName] = NSColor.secondaryLabelColor()
         plus_str = NSAttributedString.alloc().initWithString_attributes_("+", plus_attrs)
         text_size = plus_str.size()
@@ -282,12 +309,11 @@ class AddFolderView(NSView):
         plus_y = icon_rect.origin.y + (icon_rect.size.height - text_size.height) / 2
         plus_str.drawAtPoint_(NSMakePoint(plus_x, plus_y))
 
-        # "New Folder" text
-        text_x = 8 + ICON_SIZE + 8
+        text_x = 11 + ADD_ICON_SIZE + 10
         label_attrs = NSMutableDictionary.alloc().init()
-        label_attrs[NSFontAttributeName] = NSFont.systemFontOfSize_(12)
+        label_attrs[NSFontAttributeName] = NSFont.systemFontOfSize_weight_(12, 0.28)
         label_attrs[NSForegroundColorAttributeName] = NSColor.secondaryLabelColor()
-        label_str = NSAttributedString.alloc().initWithString_attributes_("New Folder", label_attrs)
+        label_str = NSAttributedString.alloc().initWithString_attributes_("Add Folder", label_attrs)
         label_size = label_str.size()
         label_y = (bounds.size.height - label_size.height) / 2
         label_str.drawAtPoint_(NSMakePoint(text_x, label_y))
@@ -377,13 +403,10 @@ class FolderPanel:
         self._lip_height = initial_h
 
         cv = self._lip_window.contentView()
-        body = NSVisualEffectView.alloc().initWithFrame_(
+        body = DrawerTabView.alloc().initWithFrame_(
             NSMakeRect(0, 0, total_w, initial_h)
         )
-        self._apply_surface_chrome(body, 9)
-        body.layer().setBorderColor_(
-            NSColor.whiteColor().colorWithAlphaComponent_(0.20).CGColor()
-        )
+        body.setWantsLayer_(True)
         cv.addSubview_(body)
         self._lip_bg = body
 
@@ -395,12 +418,6 @@ class FolderPanel:
         btn.setAction_(b"invoke:")
         cv.addSubview_(btn)
         self._lip_btn = btn
-
-        chevron = DrawerChevronView.alloc().initWithFrame_(
-            NSMakeRect(0, 0, total_w, initial_h)
-        )
-        cv.addSubview_(chevron)
-        self._lip_chevron = chevron
         self._sync_tab_symbol()
 
     def _build_panel(self):
@@ -437,7 +454,7 @@ class FolderPanel:
             NSMakeRect(0, 0, FOLDER_PANEL_WIDTH, SHELF_HEADER_HEIGHT)
         )
         title = NSTextField.labelWithString_("Folders")
-        title.setFrame_(NSMakeRect(14, 8, 120, 20))
+        title.setFrame_(NSMakeRect(14, 8, 112, 20))
         title.setFont_(NSFont.systemFontOfSize_weight_(13, 0.5))
         title.setTextColor_(NSColor.labelColor())
         title.setDrawsBackground_(False)
@@ -445,6 +462,19 @@ class FolderPanel:
         title.setEditable_(False)
         title.setSelectable_(False)
         hdr.addSubview_(title)
+        self._panel_title = title
+
+        count = NSTextField.labelWithString_("0")
+        count.setFrame_(NSMakeRect(FOLDER_PANEL_WIDTH - 48, 9, 34, 18))
+        count.setFont_(NSFont.systemFontOfSize_weight_(11, 0.32))
+        count.setTextColor_(NSColor.secondaryLabelColor())
+        count.setAlignment_(2)
+        count.setDrawsBackground_(False)
+        count.setBezeled_(False)
+        count.setEditable_(False)
+        count.setSelectable_(False)
+        hdr.addSubview_(count)
+        self._panel_count = count
         container.addSubview_(hdr)
         self._panel_header = hdr
 
@@ -509,6 +539,7 @@ class FolderPanel:
         folders = [f for f in self._settings.get("pinned_folders", []) if os.path.isdir(f)]
         item_w = FOLDER_PANEL_WIDTH - FOLDER_PANEL_PADDING * 2
         y = FOLDER_PANEL_PADDING
+        self._panel_count.setStringValue_(str(len(folders)))
         for folder_path in folders:
             fv = FolderItemView.make_item(
                 folder_path, self.remove_folder, self._move_files_to_folder
@@ -671,19 +702,13 @@ class FolderPanel:
 
     def _sync_tab_symbol(self):
         self._update_lip_surface_frames(self._drawer_side)
-        direction = "right" if self._tab_symbol(self._drawer_side) == "\u203a" else "left"
-        self._lip_chevron.setDirection_(direction)
+        self._lip_bg.setState(self._drawer_side, self._panel_open)
 
     def _update_lip_surface_frames(self, side):
         h = self._lip_height
         w = self._lip_total_width
         self._lip_bg.setFrame_(NSMakeRect(0, 0, w, h))
-        # Center chevron in visible peek (handle is always tucked behind shelf or panel)
-        visible_w = w - FOLDER_TAB_DOCK_OVERLAP
-        if side == "left":
-            self._lip_chevron.setFrame_(NSMakeRect(0, 0, visible_w, h))
-        else:
-            self._lip_chevron.setFrame_(NSMakeRect(FOLDER_TAB_DOCK_OVERLAP, 0, visible_w, h))
+        self._lip_bg.setState(side, self._panel_open)
 
     def _resize_lip(self, height):
         height = int(height)

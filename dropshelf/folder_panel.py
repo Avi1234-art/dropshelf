@@ -232,7 +232,7 @@ class DrawerTabView(NSView):
     def hitTest_(self, point):
         return None
 
-    def setState(self, side, is_open):
+    def set_drawer_state(self, side, is_open):
         side = side if side in {"left", "right"} else "left"
         is_open = bool(is_open)
         if side == self._side and is_open == self._open:
@@ -702,13 +702,13 @@ class FolderPanel:
 
     def _sync_tab_symbol(self):
         self._update_lip_surface_frames(self._drawer_side)
-        self._lip_bg.setState(self._drawer_side, self._panel_open)
+        self._lip_bg.set_drawer_state(self._drawer_side, self._panel_open)
 
     def _update_lip_surface_frames(self, side):
         h = self._lip_height
         w = self._lip_total_width
         self._lip_bg.setFrame_(NSMakeRect(0, 0, w, h))
-        self._lip_bg.setState(side, self._panel_open)
+        self._lip_bg.set_drawer_state(side, self._panel_open)
 
     def _resize_lip(self, height):
         height = int(height)
